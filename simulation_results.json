@@ -1,0 +1,149 @@
+[
+  {
+    "label": "随机 vs 随机",
+    "n": 50000,
+    "p1_wins": 9966,
+    "p2_wins": 40034,
+    "p1_winrate": 19.932,
+    "p2_winrate": 80.068,
+    "avg_rounds": 2.00286,
+    "round_dist": {
+      "3": 6420,
+      "1": 24221,
+      "2": 12932,
+      "4": 3089,
+      "6": 1752,
+      "5": 1586
+    },
+    "p1_strategy": "random",
+    "p2_strategy": "random",
+    "p1_bribe": "random",
+    "p2_bribe": "random"
+  },
+  {
+    "label": "P1最优 vs P2最优+1金贿赂",
+    "n": 50000,
+    "p1_wins": 10740,
+    "p2_wins": 39260,
+    "p1_winrate": 21.48,
+    "p2_winrate": 78.52,
+    "avg_rounds": 2.02968,
+    "round_dist": {
+      "1": 24328,
+      "4": 1849,
+      "2": 7343,
+      "3": 14277,
+      "6": 1228,
+      "5": 975
+    },
+    "p1_strategy": "p1_optimal",
+    "p2_strategy": "p2_optimal",
+    "p1_bribe": "none",
+    "p2_bribe": "one"
+  },
+  {
+    "label": "P2买情报 vs P1不买",
+    "n": 50000,
+    "p1_wins": 8937,
+    "p2_wins": 41063,
+    "p1_winrate": 17.874000000000002,
+    "p2_winrate": 82.126,
+    "avg_rounds": 2.01056,
+    "round_dist": {
+      "2": 12687,
+      "4": 3171,
+      "3": 6424,
+      "1": 24306,
+      "6": 1832,
+      "5": 1580
+    },
+    "p1_strategy": "random",
+    "p2_strategy": "random",
+    "p1_bribe": "none",
+    "p2_bribe": "one"
+  },
+  {
+    "label": "P1全砸 vs P2 1金",
+    "n": 50000,
+    "p1_wins": 0,
+    "p2_wins": 50000,
+    "p1_winrate": 0.0,
+    "p2_winrate": 100.0,
+    "avg_rounds": 1.96992,
+    "round_dist": {
+      "1": 24235,
+      "2": 13025,
+      "3": 6714,
+      "4": 3283,
+      "6": 1222,
+      "5": 1521
+    },
+    "p1_strategy": "random",
+    "p2_strategy": "random",
+    "p1_bribe": "all",
+    "p2_bribe": "one"
+  },
+  {
+    "label": "P1升序 vs P2随机",
+    "n": 50000,
+    "p1_wins": 32087,
+    "p2_wins": 17913,
+    "p1_winrate": 64.17399999999999,
+    "p2_winrate": 35.826,
+    "avg_rounds": 2.36502,
+    "round_dist": {
+      "1": 17476,
+      "4": 5486,
+      "2": 13478,
+      "3": 8933,
+      "6": 1941,
+      "5": 2686
+    },
+    "p1_strategy": "ascending",
+    "p2_strategy": "random",
+    "p1_bribe": "none",
+    "p2_bribe": "none"
+  },
+  {
+    "label": "P1降序 vs P2随机",
+    "n": 50000,
+    "p1_wins": 18369,
+    "p2_wins": 31631,
+    "p1_winrate": 36.738,
+    "p2_winrate": 63.26199999999999,
+    "avg_rounds": 1.72766,
+    "round_dist": {
+      "1": 31122,
+      "6": 1579,
+      "2": 10138,
+      "4": 1974,
+      "3": 4160,
+      "5": 1027
+    },
+    "p1_strategy": "descending",
+    "p2_strategy": "random",
+    "p1_bribe": "none",
+    "p2_bribe": "none"
+  },
+  {
+    "label": "无贿赂纯随机",
+    "n": 50000,
+    "p1_wins": 24417,
+    "p2_wins": 25583,
+    "p1_winrate": 48.834,
+    "p2_winrate": 51.166,
+    "avg_rounds": 2.02358,
+    "round_dist": {
+      "1": 24283,
+      "2": 12493,
+      "6": 1935,
+      "3": 6483,
+      "4": 3179,
+      "5": 1627
+    },
+    "p1_strategy": "random",
+    "p2_strategy": "random",
+    "p1_bribe": "none",
+    "p2_bribe": "none"
+  }
+]

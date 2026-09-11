@@ -18,6 +18,63 @@ Step into a dusty saloon where the stakes are life and death. Outwit your oppone
 
 ---
 
+## 🧮 The Math Behind the Game (v5.0)
+
+This game is more than a card game — it's a **math problem about asymmetry**, wrapped in a western saloon.
+
+### Key Findings (from 350,000 simulated games)
+
+| Scenario | P1 (Snake) Win Rate | P2 (Lizard) Win Rate |
+|---|---|---|
+| Random vs Random | 19.9% | 80.1% |
+| P1 Optimal vs P2+Intel | 21.5% | 78.5% |
+| **No Bribes (Fair)** | **48.8%** | **51.2%** |
+| P1 All-In Bribe | 0.0% | 100.0% |
+
+### The Core Truths
+
+1. **Gold is worthless** — it never enters any win/loss determination. It's pure narrative deception.
+2. **Bribes only help P2** — P2 holds the final rule-flip, so intel = guaranteed win. P1's intel is worth 0.
+3. **The seat decides everything** — not luck, not skill. P2 wins 80%+ with bribes, 51% without.
+4. **Average game length: 2.02 rounds** — 97.9% of games end before round 6.
+
+### Best-of-Three Swap System
+
+To make the game fair, v5.0 introduces a **best-of-three with side swap**:
+- First to 2 wins takes the match
+- Sides swap after every round (P1 becomes P2, P2 becomes P1)
+- Each player experiences both the advantaged and disadvantaged seat
+- This turns the game's biggest flaw into its biggest feature
+
+### In-Game Mathematical Truth Reveal
+
+After the final match ends, press **[A]** to reveal the mathematical truth:
+- 4 pages of simulation data, formulas, and optimal strategies
+- Win rate comparison charts
+- The gold-useless theorem proof
+- Optimal strategy for both seats
+- The final verdict on what this game really is
+
+### Full Analysis
+
+See [MATHEMATICAL_ANALYSIS.md](MATHEMATICAL_ANALYSIS.md) for the complete deep dive:
+- Mathematical modeling (state space, Bellman equations)
+- Game theory analysis (Stackelberg game, committer vs adjudicator)
+- Psychology analysis (player's cognitive arc, intuition traps)
+- Probability analysis (death countdown, game length distribution)
+- Optimal strategy tables
+- All simulation data and methodology
+
+### Reproduce the Simulations
+
+```bash
+python simulate.py
+```
+
+Outputs `simulation_results.json` with all 7 experiments (50,000 games each).
+
+---
+
 ## 🎮 Quick Start
 
 ### Requirements

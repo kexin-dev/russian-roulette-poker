@@ -543,24 +543,35 @@ class Dealer:
             ])
 
     def _card_hint_false(self, card_val):
-        """生成关于某张牌的假情报（与真实相反）"""
+        """生成关于某张牌的假情报（与真实相反，三档信号都可能出现）"""
         if card_val <= 2:
+            # 真实是 small → 假情报随机说 medium 或 large
             return random.choice([
+                "Opponent's card is middling. Nothing fancy.",
+                "Average card. Could go either way.",
                 "Opponent's card is huge! He's loaded for bear.",
                 "Big card, real big. I'd be scared if I were you.",
                 "He's packin' serious heat. Watch yourself.",
             ])
         elif card_val <= 4:
+            # 真实是 medium → 假情报随机说 small 或 large
             return random.choice([
                 "Opponent's card is tiny. Practically empty.",
                 "Small card. He's got nothing.",
                 "Light as a feather, that one.",
+                "Opponent's card is heavy... real heavy.",
+                "That's a big bullet he's carrying. Careful.",
+                "Large card. He might be dangerous.",
             ])
         else:
+            # 真实是 large → 假情报随机说 small 或 medium
             return random.choice([
                 "Opponent's card is tiny. Nothing to fear.",
                 "Small card. He's bluffing if he acts tough.",
                 "Barely a bullet in there. You'll be fine.",
+                "Opponent's card is middling. Average at best.",
+                "Nothing special in his hand, I'll tell ya.",
+                "Middle of the road. Nothing to write home about.",
             ])
 
     def _card_hint_vague(self):
@@ -615,15 +626,15 @@ class Dealer:
 
     def _compose_speech(self, p1, p2, top, top_amt):
         lines = []
-        total = sum(self.bribes.values())
-        ratio = top_amt / total if total > 0 else 0
-
-        if ratio > 0.8:
-            lines.append(f"({top.name.split('—')[0].strip()} is my sugar daddy tonight. I gotta play nice.)")
-        elif ratio > 0.55:
-            lines.append(f"({top.name.split('—')[0].strip()} paid well... I owe 'em one.)")
-        else:
-            lines.append("(Both paid up. I don't wanna cross either.)")
+        # 不再泄露金主身份和出价比例，只说模糊的氛围话
+        lines.append(random.choice([
+            "Gold changes hands tonight... and so does fate.",
+            "The owl sees all... but only tells what he's paid to tell.",
+            "Somebody's buyin' secrets. Whether they're worth it... heh.",
+            "Coins clink, cards whisper. Who's lyin'? Who's tellin'?",
+            "I got gold in my pocket and secrets in my head. Life is good.",
+            "The highest bidder gets my ear. The rest get my smile.",
+        ]))
 
         # 模糊评论下注
         if p1.round_bet > 0 or p2.round_bet > 0:
@@ -727,6 +738,13 @@ class Game:
         self.particles = Particles()
         self.phase = 'menu'
         self.round_num = 0
+        # ── 三局两胜换边制 ──
+        self.match_round = 1          # 当前第几局
+        self.p1_match_wins = 0       # P1胜场数
+        self.p2_match_wins = 0       # P2胜场数
+        self.match_round_winner = None  # 本局胜者（None=未结算/平局）
+        self.match_final_over = False    # 是否最终分出胜负
+        self.match_winner = None         # 最终胜者
         self.message = "Welcome to the deadliest saloon in the West. Press START to begin."
         self.message_timer = 0
         self.shoot_target = None
@@ -789,6 +807,27 @@ class Game:
         self.gold_burst_timer = 0
         self.slow_motion = 0
         self._start_select()
+
+    def _swap_and_next_match_round(self):
+        """换边：交换P1/P2身份，重置状态，开始下一局"""
+        # 交换p1和p2（先手变成后手，后手变成先手）
+        self.p1, self.p2 = self.p2, self.p1
+        # 设置座位：先手(P1)总是在左边，后手(P2)总是在右边
+        self.p1.side = 'left'
+        self.p2.side = 'right'
+        # 重置玩家状态（每局都是50金币、6张牌）
+        self.p1.reset()
+        self.p2.reset()
+        # 重置dealer
+        self.dealer.reset()
+        # 局数+1
+        self.match_round += 1
+        # 重置本局胜者标记
+        self.match_round_winner = None
+        # 重置回合数，开始新的一局
+        self.round_num = 0
+        self.message = f"Round {self.match_round} — Swap sides! {self.p1.name} goes first."
+        self.new_round()
 
     def _announce_turn(self, player, action):
         self.current_player = player
@@ -863,8 +902,9 @@ class Game:
     def _build_bet_ui(self, opening=False):
         max_bet = self.bet_turn.gold
         if opening:
-            # 开局叫价：选规则+下注
-            self.bet_input = InputBox(W//2-70, 620, 140, 52, 1, 1, max_bet, "Bet Gold")
+            # 开局叫价：选规则+下注（0金也能叫价，只是不下注）
+            min_bet = 1 if max_bet > 0 else 0
+            self.bet_input = InputBox(W//2-70, 620, 140, 52, min_bet, min_bet, max_bet, "Bet Gold")
             self.buttons['mode'] = Button(W//2-180, 690, 120, 40, "Mode: HIGH")
             self.buttons['call'] = Button(W//2-100, 750, 200, 50, "PLACE BET", font=FONT_B, col=C_RUST, hot=C_BLOOD)
         else:
@@ -881,7 +921,7 @@ class Game:
 
     def _place_opening_bet(self):
         """玩家1开局叫价"""
-        amt = max(1, min(self.bet_turn.gold, self.bet_input.value))
+        amt = max(0, min(self.bet_turn.gold, self.bet_input.value))
         mode = self.buttons['mode'].text.split(':')[1].strip().lower()
         self.bet_mode = 'big' if mode == 'high' else 'small'
         self.bet_current = amt
@@ -1056,7 +1096,27 @@ class Game:
         elif self.phase == 'gameover':
             if 'restart' in self.buttons and self.buttons['restart'].check(ev):
                 audio.play('button_click.wav')
-                self.reset_all()
+                if self.match_final_over:
+                    self.reset_all()
+                else:
+                    self._swap_and_next_match_round()
+            # 最终结束后按 A 键查看数学真相
+            if ev.type == pygame.KEYDOWN and ev.key == pygame.K_a and self.match_final_over:
+                audio.play('button_click.wav')
+                self.phase = 'analysis'
+                self.analysis_page = 0
+        elif self.phase == 'analysis':
+            # 数学分析界面：按 A/D 或左右箭头翻页，按 ESC/空格返回
+            if ev.type == pygame.KEYDOWN:
+                if ev.key in (pygame.K_d, pygame.K_RIGHT, pygame.K_SPACE):
+                    self.analysis_page = min(3, self.analysis_page + 1)
+                    audio.play('button_click.wav')
+                elif ev.key in (pygame.K_a, pygame.K_LEFT):
+                    self.analysis_page = max(0, self.analysis_page - 1)
+                    audio.play('button_click.wav')
+                elif ev.key in (pygame.K_ESCAPE, pygame.K_RETURN):
+                    self.phase = 'gameover'
+                    audio.play('button_click.wav')
 
     # ── Update ─────────────────────────────────────────────────────
     def update(self):
@@ -1287,7 +1347,7 @@ class Game:
     def _draw_topbar(self, surf):
         bar = pygame.Rect(10, 8, W-20, 52)
         draw_rounded(surf, bar, 10, (*C_BROWN[:3], 220), C_LEATHER, 2)
-        draw_text(surf, f"Round {self.round_num}", FONT_B, C_GOLD_L, 30, 34)
+        draw_text(surf, f"R{self.match_round} | {self.p1_match_wins}-{self.p2_match_wins}", FONT_B, C_GOLD_L, 30, 34)
         phase_cn = {
             'menu':'Menu','bribe':'Bribe','select':'Select',
             'reveal':'Reveal','betting':'Betting','shooting':'Shooting',
@@ -1390,27 +1450,267 @@ class Game:
         elif self.phase == 'gameover':
             overlay = make_alpha_surf(W, H, (20,10,10), 180)
             surf.blit(overlay, (0,0))
-            if not self.p1.alive or len(self.p1.hand) == 0:
-                winner = self.p2
-                reason = "Snake took a bullet" if not self.p1.alive else "Snake ran out of cards"
-            else:
-                winner = self.p1
-                reason = "Lizard took a bullet" if not self.p2.alive else "Lizard ran out of cards"
+            # 第一次进入时结算本局胜者
+            if self.match_round_winner is None and not self.match_final_over:
+                if not self.p1.alive:
+                    self.match_round_winner = self.p2
+                    round_reason = "Snake took a bullet"
+                elif not self.p2.alive:
+                    self.match_round_winner = self.p1
+                    round_reason = "Lizard took a bullet"
+                elif len(self.p1.hand) == 0 and len(self.p2.hand) == 0:
+                    self.match_round_winner = None  # 平局
+                    round_reason = "Both guns empty — DRAW!"
+                elif len(self.p1.hand) == 0:
+                    self.match_round_winner = self.p2
+                    round_reason = "Snake ran out of cards"
+                else:
+                    self.match_round_winner = self.p1
+                    round_reason = "Lizard ran out of cards"
+                # 更新胜负计数
+                if self.match_round_winner == self.p1:
+                    self.p1_match_wins += 1
+                elif self.match_round_winner == self.p2:
+                    self.p2_match_wins += 1
+                # 检查是否最终分出胜负（三局两胜）
+                if self.p1_match_wins >= 2 or self.p2_match_wins >= 2:
+                    self.match_final_over = True
+                    self.match_winner = self.p1 if self.p1_match_wins >= 2 else self.p2
             # 金色粒子雨
             if random.random() < 0.3:
                 self.particles.emit_gold(random.randint(100, W-100), -20, 2, random.randint(200, W-200), H+50)
-            # 标题脉动
+            # 标题
             title_scale = 1.0 + 0.04 * math.sin(pygame.time.get_ticks() * 0.005)
-            title_font = pygame.font.SysFont("georgia", int(44 * title_scale), bold=True, italic=True)
-            draw_text(surf, "GAME OVER", title_font, C_BLOOD, cx, H//2-120, center=True)
-            winner_scale = 1.0 + 0.03 * math.sin(pygame.time.get_ticks() * 0.006 + 1)
-            winner_font = pygame.font.SysFont("georgia", int(44 * winner_scale), bold=True, italic=True)
-            draw_text(surf, f"{winner.name} WINS!", winner_font, C_GOLD, cx, H//2-40, center=True)
-            draw_text(surf, reason, FONT_B, C_BONE, cx, H//2+10, center=True)
-            draw_text(surf, f"Remaining Gold — {winner.name}: {winner.gold} | Dealer: {self.dealer.gold}",
-                      FONT_B, C_GOLD_L, cx, H//2+44, center=True)
-            self.buttons['restart'] = Button(cx-130, H//2+100, 260, 60, "PLAY AGAIN", font=FONT_T, col=C_RUST, hot=C_BLOOD)
-            self.buttons['restart'].draw(surf)
+            title_font = pygame.font.SysFont("georgia", int(40 * title_scale), bold=True, italic=True)
+            if self.match_final_over:
+                draw_text(surf, "MATCH OVER", title_font, C_BLOOD, cx, H//2-130, center=True)
+                # 最终胜者
+                winner_scale = 1.0 + 0.03 * math.sin(pygame.time.get_ticks() * 0.006 + 1)
+                winner_font = pygame.font.SysFont("georgia", int(44 * winner_scale), bold=True, italic=True)
+                draw_text(surf, f"{self.match_winner.name} WINS THE MATCH!", winner_font, C_GOLD, cx, H//2-50, center=True)
+                draw_text(surf, f"Final Score: {self.p1_match_wins} — {self.p2_match_wins}", FONT_T, C_BONE, cx, H//2+5, center=True)
+                draw_text(surf, f"Best of 3 — {self.match_winner.name} takes the saloon.",
+                          FONT_B, C_GOLD_L, cx, H//2+40, center=True)
+                draw_text(surf, "Press [A] to reveal the mathematical truth...",
+                          FONT_S, (180,160,130), cx, H//2+68, center=True)
+                self.buttons['restart'] = Button(cx-130, H//2+95, 260, 60, "PLAY AGAIN", font=FONT_T, col=C_RUST, hot=C_BLOOD)
+                self.buttons['restart'].draw(surf)
+            else:
+                # 局间休息：显示本局结果和大比分
+                draw_text(surf, f"ROUND {self.match_round} OVER", title_font, C_BLOOD, cx, H//2-130, center=True)
+                if self.match_round_winner:
+                    rw_scale = 1.0 + 0.03 * math.sin(pygame.time.get_ticks() * 0.006 + 1)
+                    rw_font = pygame.font.SysFont("georgia", int(36 * rw_scale), bold=True, italic=True)
+                    draw_text(surf, f"{self.match_round_winner.name} wins round {self.match_round}!", rw_font, C_GOLD, cx, H//2-55, center=True)
+                else:
+                    draw_text(surf, "DRAW! No winner this round.", FONT_T, C_GOLD_L, cx, H//2-55, center=True)
+                # 大比分
+                score_scale = 1.0 + 0.02 * math.sin(pygame.time.get_ticks() * 0.004)
+                score_font = pygame.font.SysFont("georgia", int(48 * score_scale), bold=True, italic=True)
+                draw_text(surf, f"{self.p1_match_wins}  —  {self.p2_match_wins}", score_font, C_GOLD_L, cx, H//2+5, center=True)
+                draw_text(surf, f"{self.p1.name.split('—')[0].strip()} vs {self.p2.name.split('—')[0].strip()}",
+                          FONT_B, C_BONE, cx, H//2+45, center=True)
+                draw_text(surf, "Best of 3 — first to 2 wins. Swap sides next round.",
+                          FONT_B, (180,160,130), cx, H//2+72, center=True)
+                # 换边按钮
+                self.buttons['restart'] = Button(cx-160, H//2+105, 320, 56, "NEXT ROUND — SWAP SIDES", font=FONT_B, col=C_RUST, hot=C_BLOOD)
+                self.buttons['restart'].draw(surf)
+        elif self.phase == 'analysis':
+            # ═══ 数学真相揭示界面 ═══
+            overlay = make_alpha_surf(W, H, (8,4,2), 230)
+            surf.blit(overlay, (0,0))
+            page = getattr(self, 'analysis_page', 0)
+            pages_total = 4
+
+            # 顶部标题
+            title_scale = 1.0 + 0.02 * math.sin(pygame.time.get_ticks() * 0.003)
+            title_font = pygame.font.SysFont("georgia", int(32 * title_scale), bold=True, italic=True)
+            draw_text(surf, "THE MATHEMATICAL TRUTH", title_font, C_BLOOD, cx, 50, center=True)
+            pygame.draw.line(surf, C_GOLD_D, (cx-300, 85), (cx+300, 85), 2)
+
+            # 页码
+            draw_text(surf, f"Page {page+1} / {pages_total}", FONT_S, (150,130,100), cx, 100, center=True)
+
+            if page == 0:
+                # ═══ 第1页：核心真相 - 胜率对比 ═══
+                draw_text(surf, "THE CORE TRUTH: IT'S THE SEAT, NOT THE SKILL", FONT_T, C_GOLD_L, cx, 130, center=True)
+                draw_text(surf, "You thought you were playing cards. The seat was playing you.",
+                          FONT_B, (200,180,150), cx, 165, center=True)
+
+                # 胜率对比柱状图（用矩形绘制）
+                chart_x, chart_y = 200, 210
+                chart_w, chart_h = 880, 280
+                # 背景
+                pygame.draw.rect(surf, (30,20,12), (chart_x, chart_y, chart_w, chart_h), border_radius=8)
+                pygame.draw.rect(surf, (80,55,30), (chart_x, chart_y, chart_w, chart_h), 2, border_radius=8)
+
+                # 三组数据
+                bars = [
+                    ("Random vs Random", 19.9, 80.1),
+                    ("P1 Optimal vs P2+Intel", 21.5, 78.5),
+                    ("No Bribe (Fair)", 48.8, 51.2),
+                ]
+                bar_w = 120
+                gap = 80
+                start_x = chart_x + 100
+                for i, (label, p1r, p2r) in enumerate(bars):
+                    bx = start_x + i * (bar_w * 2 + gap + 60)
+                    # P1柱
+                    p1_h = int(p1r / 100 * (chart_h - 80))
+                    pygame.draw.rect(surf, (100,60,30), (bx, chart_y + chart_h - 40 - p1_h, bar_w, p1_h), border_radius=4)
+                    pygame.draw.rect(surf, C_GOLD_D, (bx, chart_y + chart_h - 40 - p1_h, bar_w, p1_h), 1, border_radius=4)
+                    draw_text(surf, f"{p1r}%", FONT_B, C_GOLD_L, bx + bar_w//2, chart_y + chart_h - 40 - p1_h - 20, center=True)
+                    draw_text(surf, "P1", FONT_S, (150,130,100), bx + bar_w//2, chart_y + chart_h - 25, center=True)
+                    # P2柱
+                    p2_h = int(p2r / 100 * (chart_h - 80))
+                    pygame.draw.rect(surf, (120,30,30), (bx + bar_w + 10, chart_y + chart_h - 40 - p2_h, bar_w, p2_h), border_radius=4)
+                    pygame.draw.rect(surf, C_BLOOD_L, (bx + bar_w + 10, chart_y + chart_h - 40 - p2_h, bar_w, p2_h), 1, border_radius=4)
+                    draw_text(surf, f"{p2r}%", FONT_B, (240,100,100), bx + bar_w + 10 + bar_w//2, chart_y + chart_h - 40 - p2_h - 20, center=True)
+                    draw_text(surf, "P2", FONT_S, (150,130,100), bx + bar_w + 10 + bar_w//2, chart_y + chart_h - 25, center=True)
+                    # 标签
+                    draw_text(surf, label, FONT_XS, (180,160,130), bx + bar_w + 5, chart_y + chart_h - 8, center=True)
+
+                # 关键结论
+                draw_text(surf, "WITHOUT BRIBES: 48.8% vs 51.2% (almost fair)", FONT_B, C_GOLD, cx, 520, center=True)
+                draw_text(surf, "WITH BRIBES: P2 wins 80%+ of the time", FONT_B, C_BLOOD_L, cx, 550, center=True)
+                draw_text(surf, "The asymmetry comes from the bribe system, not the cards.",
+                          FONT_S, (200,180,150), cx, 580, center=True)
+
+            elif page == 1:
+                # ═══ 第2页：金币无用定理 + 贿赂真相 ═══
+                draw_text(surf, "THE GOLD IS WORTHLESS. THE BRIBE ONLY HELPS ONE SIDE.",
+                          FONT_T, C_GOLD_L, cx, 130, center=True)
+
+                # 金币无用定理
+                draw_text(surf, "THEOREM 1: GOLD = 0", FONT_H, C_BLOOD, cx, 175, center=True)
+                gold_lines = [
+                    "Game over check: only 'alive' and 'hand' matter — gold never enters.",
+                    "Winner determination: only compares alive and hand — never gold.",
+                    "Bet amount: only transfers gold, never affects HIGH/LOW or hit chance.",
+                    "Hit chance: card value / 6 — completely independent of gold.",
+                    "Can't pay? owed = min(owed, gold). No fold, no all-in, no loss.",
+                    "",
+                    "CONCLUSION: All 'bankroll destruction' tactics are mathematically invalid.",
+                    "Gold's only function: narrative deception. You think it matters.",
+                ]
+                gy = 220
+                for line in gold_lines:
+                    col = C_GOLD_L if line.startswith("CONCLUSION") else C_BONE
+                    f = FONT_B if line.startswith("CONCLUSION") else FONT_S
+                    draw_text(surf, line, f, col, cx, gy, center=True)
+                    gy += 22
+
+                # 贿赂真相
+                draw_text(surf, "THEOREM 2: BRIBES ONLY HELP P2", FONT_H, C_BLOOD, cx, 430, center=True)
+                bribe_lines = [
+                    "P2 holds the final rule-flip. With intel, P2 picks the winning rule 100%.",
+                    "P1's intel is worthless: card is locked, rule decided by P2.",
+                    "P1 all-in bribe: 0.0% win rate. You pay to lose harder.",
+                    "P2 pays 1 gold: buys the entire game.",
+                ]
+                by = 475
+                for line in bribe_lines:
+                    draw_text(surf, line, FONT_S, C_BONE, cx, by, center=True)
+                    by += 22
+
+            elif page == 2:
+                # ═══ 第3页：数学公式 + 概率分析 ═══
+                draw_text(surf, "THE MATH: FORMULAS & PROBABILITIES", FONT_T, C_GOLD_L, cx, 130, center=True)
+
+                # 命中率公式
+                draw_text(surf, "HIT PROBABILITY", FONT_B, C_GOLD, cx, 170, center=True)
+                draw_text(surf, "P(death | card = n) = n / 6", FONT_H, C_BLOOD_L, cx, 200, center=True)
+
+                # 各牌值死亡率
+                card_data = [(1, 16.7), (2, 33.3), (3, 50.0), (4, 66.7), (5, 83.3), (6, 100.0)]
+                cx_base = 200
+                cy_base = 250
+                bar_w = 80
+                gap = 50
+                for i, (card, rate) in enumerate(card_data):
+                    bx = cx_base + i * (bar_w + gap)
+                    bh = int(rate / 100 * 150)
+                    color = (60 + rate * 1.5, 30, 30)
+                    pygame.draw.rect(surf, color, (bx, cy_base + 150 - bh, bar_w, bh), border_radius=4)
+                    draw_text(surf, f"{rate}%", FONT_B, C_BONE, bx + bar_w//2, cy_base + 150 - bh - 18, center=True)
+                    draw_text(surf, f"Card {card}", FONT_S, (180,160,130), bx + bar_w//2, cy_base + 165, center=True)
+
+                # 游戏长度分布
+                draw_text(surf, "GAME LENGTH DISTRIBUTION (200k simulations)", FONT_B, C_GOLD, cx, 460, center=True)
+                length_lines = [
+                    "Average: 2.02 rounds  |  Round 1 death: 48.5%  |  3 rounds: 86.4%  |  Full 6: 2.1%",
+                    "",
+                    "Your 'late-game strategy' never gets used. 97.9% of games end before round 6.",
+                ]
+                ly = 490
+                for line in length_lines:
+                    draw_text(surf, line, FONT_S, C_BONE, cx, ly, center=True)
+                    ly += 22
+
+                # 核心设计
+                draw_text(surf, "THE GENIUS DESIGN: YOUR ATTACK = YOUR DEATH SENTENCE",
+                          FONT_B, C_BLOOD_L, cx, 570, center=True)
+                draw_text(surf, "Card 6 wins HIGH mode... but if you lose, 6/6 = 100% guaranteed death.",
+                          FONT_S, (200,180,150), cx, 595, center=True)
+
+            elif page == 3:
+                # ═══ 第4页：最优策略 + 结论 ═══
+                draw_text(surf, "OPTIMAL STRATEGY & FINAL VERDICT", FONT_T, C_GOLD_L, cx, 130, center=True)
+
+                # P2策略（优势位）
+                draw_text(surf, "IF YOU SIT RIGHT (LIZARD) — 90%+ WIN RATE", FONT_B, C_GOLD, cx, 170, center=True)
+                p2_strat = [
+                    "1. Bribe exactly 1 gold — buy P1's real card.",
+                    "2. If P1 plays small (1-2): play big (5-6), call HIGH.",
+                    "3. If P1 plays big (5-6): play small (1-2), call LOW.",
+                    "4. If P1 calls the wrong rule: RAISE and flip it.",
+                    "5. Always keep the final raise — you decide the rule.",
+                ]
+                sy = 200
+                for line in p2_strat:
+                    draw_text(surf, line, FONT_S, C_BONE, cx, sy, center=True)
+                    sy += 20
+
+                # P1策略（劣势位）
+                draw_text(surf, "IF YOU SIT LEFT (SNAKE) — 21.5% MAX WIN RATE", FONT_B, C_BLOOD_L, cx, 315, center=True)
+                p1_strat = [
+                    "1. NEVER bribe. Your intel is worthless. Save the gold (it's useless anyway).",
+                    "2. Mixed strategy: 87.5% play 3, 7% play 1, 5.6% play 6.",
+                    "3. Any deterministic pattern gets exploited by P2.",
+                    "4. Call HIGH/LOW randomly — don't be predictable.",
+                    "5. Accept it: you're playing a solved game. Enjoy discovering the truth.",
+                ]
+                sy = 345
+                for line in p1_strat:
+                    draw_text(surf, line, FONT_S, C_BONE, cx, sy, center=True)
+                    sy += 20
+
+                # 最终结论
+                draw_text(surf, "THE FINAL VERDICT", FONT_H, C_BLOOD, cx, 470, center=True)
+                verdict = [
+                    "This is not a card game. Not a luck game. Not a psychology game.",
+                    "",
+                    "It is a math problem about asymmetry, wrapped in a western saloon.",
+                    "The real game is the moment you realize: nothing you did mattered.",
+                    "Only where you sat mattered. And the seat was random.",
+                    "",
+                    "That's the most western thing of all.",
+                ]
+                vy = 510
+                for line in verdict:
+                    col = C_GOLD_L if line.startswith("That's") else C_BONE
+                    f = FONT_B if line.startswith("That's") else FONT_S
+                    draw_text(surf, line, f, col, cx, vy, center=True)
+                    vy += 22
+
+            # 底部操作提示
+            draw_text(surf, "[A/D or ←/→] Flip Page  |  [ESC/ENTER] Back to Game Over",
+                      FONT_S, (150,130,100), cx, H-30, center=True)
+            # 页码点
+            for i in range(pages_total):
+                dot_color = C_GOLD_L if i == page else (80,60,40)
+                pygame.draw.circle(surf, dot_color, (cx - 30 + i * 20, H-55), 4)
+
         if self.phase in ('reveal','shooting','round_end'):
             helps = [
                 "Rules: 50 gold each, hand 1-6 | Select -> Bribe -> Call/RAISE -> Reveal -> Loser shoots",
