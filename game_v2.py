@@ -1079,8 +1079,18 @@ class Game:
         if self.phase == 'menu':
             if 'start' in self.buttons and self.buttons['start'].check(ev):
                 audio.play('button_click.wav')
-                self.phase = 'contract'
+                self.phase = 'story'
                 self.buttons = {}
+                self.story_page = 0
+        elif self.phase == 'story':
+            # 故事介绍：点击或按键继续
+            if ev.type == pygame.MOUSEBUTTONDOWN or (ev.type == pygame.KEYDOWN and ev.key in (pygame.K_SPACE, pygame.K_RETURN, pygame.K_a)):
+                audio.play('button_click.wav')
+                if self.story_page < 2:
+                    self.story_page += 1
+                else:
+                    self.phase = 'contract'
+                    self.buttons = {}
         elif self.phase == 'contract':
             if 'accept' in self.buttons and self.buttons['accept'].check(ev):
                 audio.play('button_click.wav')
@@ -1164,7 +1174,7 @@ class Game:
             # 数学分析界面：按 A/D 或左右箭头翻页，按 ESC/空格返回
             if ev.type == pygame.KEYDOWN:
                 if ev.key in (pygame.K_d, pygame.K_RIGHT):
-                    self.analysis_page = min(31, self.analysis_page + 1)
+                    self.analysis_page = min(25, self.analysis_page + 1)
                     audio.play('card_flip.wav')
                 elif ev.key in (pygame.K_a, pygame.K_LEFT):
                     self.analysis_page = max(0, self.analysis_page - 1)
@@ -1279,6 +1289,10 @@ class Game:
         canvas = pygame.Surface((W, H))
         canvas.fill((0,0,0))
         self._draw_bg(canvas)
+        if self.phase == 'story':
+            self._draw_story(canvas)
+            surf.blit(canvas, (0,0))
+            return
         if self.phase == 'contract':
             self._draw_ui(canvas)
             surf.blit(canvas, (0,0))
@@ -1424,6 +1438,112 @@ class Game:
         if audio.muted:
             draw_text(surf, "[M] UNMUTE", FONT_XS, C_BLOOD, W-130, 34, center=True)
 
+
+    # ── Story Intro ─────────────────────────────────────────────────
+    def _draw_story(self, surf):
+        """开场故事：酒馆风言风语，玩家醒来发现自己在赌局中"""
+        cx = W // 2
+        # 昏暗酒馆背景
+        self._draw_bg(surf)
+        overlay = pygame.Surface((W, H), pygame.SRCALPHA)
+        overlay.fill((10, 5, 2, 200))
+        surf.blit(overlay, (0, 0))
+
+        page = getattr(self, 'story_page', 0)
+
+        if page == 0:
+            # 第一页：醒来
+            draw_text(surf, "YOU WAKE UP", FONT_H, C_BLOOD, cx, 120, center=True)
+            draw_text(surf, "Head throbbing. Mouth dry. The smell of whiskey and old wood.",
+                      FONT_S, (200, 180, 150), cx, 175, center=True)
+            draw_text(surf, "You don't remember how you got here.",
+                      FONT_S, (200, 180, 150), cx, 200, center=True)
+            draw_text(surf, "Last thing you recall: an alley, a blow from behind, darkness.",
+                      FONT_S, (180, 160, 130), cx, 225, center=True)
+
+            # 酒馆环境描述
+            pygame.draw.rect(surf, (25, 15, 8), (100, 270, 1080, 200), border_radius=10)
+            pygame.draw.rect(surf, C_GOLD_D, (100, 270, 1080, 200), 1, border_radius=10)
+            draw_text(surf, "THE SALOON", FONT_T, C_GOLD, cx, 290, center=True)
+            story_lines = [
+                "Rain hammers the windows. A door creaks somewhere in the dark.",
+                "You're at a round table. Across from you: a Lizard. He won't meet your eyes.",
+                "To your left: a Snake, counting gold with trembling hands — he looks scared,",
+                "but his eyes flick to your coin purse too often for a scared man.",
+                "The Dealer — an Owl — shuffles a deck of bullet-cards. He doesn't blink.",
+                "Other tables hold shadows: a Rabbit, a Fox, a Wolf, a one-eyed Warthog.",
+                "They're not playing. They're watching. Learning. Waiting for their turn.",
+            ]
+            sy = 325
+            for line in story_lines:
+                draw_text(surf, line, FONT_XS, C_BONE, cx, sy, center=True)
+                sy += 20
+
+            draw_text(surf, "[Click or SPACE to continue]", FONT_S, (160, 140, 110), cx, 520, center=True)
+
+        elif page == 1:
+            # 第二页：风言风语
+            draw_text(surf, "WHISPERS AT THE TABLE", FONT_T, C_GOLD_L, cx, 100, center=True)
+            draw_text(surf, "You cannot speak. But the others can. You listen.",
+                      FONT_S, (180, 160, 130), cx, 130, center=True)
+
+            whispers = [
+                ('Rabbit (trembling):', "'I... I just want to live. I always play my smallest card first.'",
+                 'She sounds terrified. But her paw does not shake when she reaches for gold.'),
+                ('Fox (smiling):', "'Come now, raise the stakes! What is life without a little risk?'",
+                 'He owes the Wolf a fortune. Everyone knows. He needs this win more than any of you.'),
+                ('Wolf (cold):', "'Gold is the only thing that does not lie in this room.'",
+                 'He says he is greedy. But he flinches when the cylinder spins.'),
+                ('Warthog (laughing, one eye):', "'HAHA! Look at them all lie! I just wanna PLAY!'",
+                 'Mad. Truly mad. But watch him — he reads faces like books. He does not bully the Rabbit.'),
+            ]
+            wy = 165
+            for speaker, quote, note in whispers:
+                pygame.draw.rect(surf, (20, 12, 6), (80, wy, 1120, 72), border_radius=6)
+                draw_text(surf, speaker, FONT_B, C_GOLD, 100, wy+8, center=False)
+                draw_text(surf, quote, FONT_XS, C_BONE, 100, wy+30, center=False)
+                draw_text(surf, note, FONT_XS, (160, 140, 110), 100, wy+50, center=False)
+                wy += 80
+
+            draw_text(surf, "[Click or SPACE to continue]", FONT_S, (160, 140, 110), cx, 520, center=True)
+
+        elif page == 2:
+            # 第三页：规则暗示 + 开始
+            draw_text(surf, "THE DEALER SPEAKS", FONT_T, C_BLOOD, cx, 100, center=True)
+            draw_text(surf, "The Owl's voice is gravel and honey.",
+                      FONT_S, (180, 160, 130), cx, 130, center=True)
+
+            pygame.draw.rect(surf, (30, 18, 8), (100, 165, 1080, 200), border_radius=10)
+            pygame.draw.rect(surf, C_GOLD_D, (100, 165, 1080, 200), 2, border_radius=10)
+            dealer_lines = [
+                "'Six cards. One revolver. Your card value = your bullets.'",
+                "'Lose the round, and you point the gun at your own skull.'",
+                "'Bribe me, and I might whisper something useful. Might.'",
+                "'Gold does not buy life here. But it buys information.'",
+                "'And information... information buys everything.'",
+                "",
+                "'The Rabbit plays small. The Fox raises high. The Wolf counts coins.'",
+                "'The Warthog... the Warthog just laughs. But notice — he never picks on her.'",
+                "'They all wear masks. You should too.'",
+            ]
+            dy = 185
+            for line in dealer_lines:
+                if line:
+                    draw_text(surf, line, FONT_S, C_BONE, cx, dy, center=True)
+                dy += 20
+
+            # 关键提示
+            draw_text(surf, "Survive six rounds, or die trying. The seat is random. The rules are not.",
+                      FONT_B, C_GOLD_L, cx, 400, center=True)
+            draw_text(surf, "You are Player 1. The Lizard is Player 2.",
+                      FONT_S, (200, 180, 150), cx, 430, center=True)
+
+            # 开始按钮
+            self.buttons['story_continue'] = Button(cx-150, 470, 300, 55, "SIGN THE CONTRACT", font=FONT_T, col=C_RUST, hot=C_BLOOD)
+            self.buttons['story_continue'].draw(surf)
+            draw_text(surf, "[Click or SPACE to begin]", FONT_XS, (160, 140, 110), cx, 545, center=True)
+
+
     def _draw_ui(self, surf):
         cx = W//2
         if self.phase == 'menu':
@@ -1563,7 +1683,7 @@ class Game:
             overlay = make_alpha_surf(W, H, (8,4,2), 235)
             surf.blit(overlay, (0,0))
             page = getattr(self, 'analysis_page', 0)
-            pages_total = 32
+            pages_total = 26
 
             # 顶部标题栏
             title_scale = 1.0 + 0.015 * math.sin(pygame.time.get_ticks() * 0.003)
@@ -2507,124 +2627,9 @@ class Game:
                 draw_text(surf, "Do NOT play single-round. Play best-of-3. The swap is where the game lives.",
                           FONT_B, C_BLOOD_L, cx, 595, center=True)
             # ═══════════════════════════════════════════════════════════
-            # PAGE 24-29: 6 BATTLE TREES (四选手两两配对 - 孙子兵法)
+            # PAGE 24: 最终结论
             # ═══════════════════════════════════════════════════════════
-            elif 24 <= page <= 29:
-                battle_idx = page - 24
-                fighters = {
-                    'brute': {'name': 'TieTou Zhang', 'cn': '铁头张莽', 'style': '6->1 Desc', 'bribe': 'Never',
-                              'trait': 'Attack = Defense', 'luck': 2, 'strat': 1, 'guts': 5, 'color': (200,60,40)},
-                    'turtle': {'name': 'WuGui Li', 'cn': '乌龟李守', 'style': '1->6 Asc', 'bribe': 'Rarely',
-                               'trait': 'Survival = Victory', 'luck': 3, 'strat': 3, 'guts': 1, 'color': (80,160,80)},
-                    'fox': {'name': 'HuLi Wang', 'cn': '狐狸王谋', 'style': 'Mix (3 main)', 'bribe': 'Often TRICK',
-                            'trait': 'Info = Power', 'luck': 3, 'strat': 5, 'guts': 3, 'color': (200,160,40)},
-                    'gambler': {'name': 'DuShen Chen', 'cn': '赌神陈运', 'style': 'Random', 'bribe': 'All-in',
-                                'trait': 'Fate = Mine', 'luck': 5, 'strat': 1, 'guts': 5, 'color': (160,80,200)},
-                }
-                battles = [
-                    {'p1': 'brute', 'p2': 'turtle', 'strat': '以逸待劳', 'en': 'WAIT AT EASE',
-                     'summary': 'Brute charges, Turtle conserves. Who exhausts first?',
-                     'winner': 'Turtle (62%)', 'key_round': 'R3', 'insight': 'Brute burns 6 in R1, survives low-cards later'},
-                    {'p1': 'brute', 'p2': 'fox', 'strat': '上兵伐谋', 'en': 'ATTACK STRATEGY',
-                     'summary': 'Force vs Calculation. Can Fox intel neutralize Brute 6?',
-                     'winner': 'Fox (78%)', 'key_round': 'R1', 'insight': 'Fox sees 6, flips LOW, Brute dies 100%'},
-                    {'p1': 'brute', 'p2': 'gambler', 'strat': '狭路相逢', 'en': 'NARROW PATH',
-                     'summary': 'Two madmen. Whose luck runs out first?',
-                     'winner': 'Brute (55%)', 'key_round': 'R2', 'insight': 'Both gamble, Brute has structure'},
-                    {'p1': 'turtle', 'p2': 'fox', 'strat': '知己知彼', 'en': 'KNOW SELF & ENEMY',
-                     'summary': 'Conservative vs Intel. Can bribes crack the shell?',
-                     'winner': 'Fox (71%)', 'key_round': 'R4', 'insight': 'Turtle low cards lose, Fox picks rule'},
-                    {'p1': 'turtle', 'p2': 'gambler', 'strat': '守株待兔', 'en': 'WAIT BY TREE',
-                     'summary': 'Turtle waits for Gambler mistake. Gambler waits for Turtle slip.',
-                     'winner': 'Turtle (58%)', 'key_round': 'R5', 'insight': 'Gambler randomness eventually self-destructs'},
-                    {'p1': 'fox', 'p2': 'gambler', 'strat': '兵不厌诈', 'en': 'ALL IS FAIR',
-                     'summary': 'Deception vs Luck. Can TRICK fool Gambler intuition?',
-                     'winner': 'Fox (65%)', 'key_round': 'R2', 'insight': 'Gambler all-in gold = no intel later rounds'},
-                ]
-                battle = battles[battle_idx]
-                f1 = fighters[battle['p1']]
-                f2 = fighters[battle['p2']]
-
-                draw_text(surf, f"BATTLE TREE {battle_idx+1}/6: {battle['strat']}", FONT_T, C_GOLD_L, cx, 72, center=True)
-                draw_text(surf, battle['en'], FONT_XS, (180,160,130), cx, 95, center=True)
-                draw_text(surf, battle['summary'], FONT_S, C_BONE, cx, 113, center=True)
-
-                cy = 132
-                for fi, (fobj, fx) in enumerate([(f1, 60), (f2, 680)]):
-                    pygame.draw.rect(surf, (25,15,8), (fx, cy, 540, 92), border_radius=8)
-                    pygame.draw.rect(surf, fobj['color'], (fx, cy, 540, 92), 2, border_radius=8)
-                    draw_text(surf, f"{fobj['cn']} ({fobj['name']})", FONT_T, fobj['color'], fx+15, cy+10, center=False)
-                    draw_text(surf, f"Cards: {fobj['style']} | Bribe: {fobj['bribe']}", FONT_XS, C_BONE, fx+15, cy+38, center=False)
-                    draw_text(surf, f"Belief: {fobj['trait']}", FONT_XS, (180,160,130), fx+15, cy+56, center=False)
-                    for si, (sname, sval) in enumerate([('LCK',fobj['luck']),('STR',fobj['strat']),('GUT',fobj['guts'])]):
-                        sx = fx + 350 + si * 65
-                        draw_text(surf, sname, FONT_XS, (160,140,110), sx, cy+12, center=False)
-                        for b in range(5):
-                            bc = fobj['color'] if b < sval else (60,40,25)
-                            pygame.draw.rect(surf, bc, (sx, cy+28+b*11, 55, 7), border_radius=2)
-                draw_text(surf, "VS", FONT_H, C_BLOOD, cx, cy+30, center=True)
-
-                ty = 245
-                draw_text(surf, "SIX-ROUND DEATH TREE (六轮生死树)", FONT_B, C_GOLD, cx, ty, center=True)
-                ty += 22
-
-                p1_seq = {'brute':[6,5,4,3,2,1], 'turtle':[1,2,3,4,5,6],
-                          'fox':[3,1,6,2,5,4], 'gambler':[4,6,2,5,1,3]}[battle['p1']]
-                p2_seq = {'brute':[6,5,4,3,2,1], 'turtle':[1,2,3,4,5,6],
-                          'fox':[6,2,5,1,4,3], 'gambler':[3,5,1,6,2,4]}[battle['p2']]
-                rules = ['HIGH','LOW','HIGH','LOW','HIGH','LOW']
-                rounds = []
-                for i in range(6):
-                    c1, c2 = p1_seq[i], p2_seq[i]
-                    rule = rules[i]
-                    if c1 == c2:
-                        p1_dr = p2_dr = 0
-                    elif (c1 > c2) if rule == 'HIGH' else (c1 < c2):
-                        p2_dr = c2 * 100 // 6
-                        p1_dr = 0
-                    else:
-                        p1_dr = c1 * 100 // 6
-                        p2_dr = 0
-                    rounds.append({'c1':c1, 'c2':c2, 'rule':rule, 'p1_dr':p1_dr, 'p2_dr':p2_dr})
-
-                nw, nh, gap = 165, 72, 22
-                sx = (W - (6*nw + 5*gap)) // 2
-                ny = ty + 8
-                for ri, rd in enumerate(rounds):
-                    nx = sx + ri * (nw + gap)
-                    dead = rd['p1_dr'] >= 100 or rd['p2_dr'] >= 100
-                    nc = (40,15,10) if dead else (20,25,15)
-                    bc = C_BLOOD if dead else C_GOLD_D
-                    pygame.draw.rect(surf, nc, (nx, ny, nw, nh), border_radius=6)
-                    pygame.draw.rect(surf, bc, (nx, ny, nw, nh), 2, border_radius=6)
-                    draw_text(surf, f"R{ri+1}", FONT_B, C_GOLD, nx+nw//2, ny+6, center=True)
-                    draw_text(surf, f"{rd['c1']} vs {rd['c2']}", FONT_T, C_BONE, nx+nw//2, ny+24, center=True)
-                    draw_text(surf, rd['rule'], FONT_XS, C_GOLD_L, nx+nw//2, ny+44, center=True)
-                    dc = C_BLOOD_L if max(rd['p1_dr'], rd['p2_dr']) >= 50 else (200,180,100)
-                    draw_text(surf, f"P1:{rd['p1_dr']}% P2:{rd['p2_dr']}%", FONT_XS, dc, nx+nw//2, ny+58, center=True)
-                    if ri < 5:
-                        lx1, lx2 = nx+nw, nx+nw+gap
-                        my = ny + nh//2
-                        pygame.draw.line(surf, C_GOLD_D, (lx1, my), (lx2, my), 2)
-                        surv = 100 - max(rd['p1_dr'], rd['p2_dr'])
-                        draw_text(surf, f"{surv}%", FONT_XS, (160,140,110), (lx1+lx2)//2, my-12, center=True)
-
-                oy = ny + nh + 20
-                pygame.draw.rect(surf, (20,12,6), (80, oy, 1120, 75), border_radius=8)
-                pygame.draw.rect(surf, C_GOLD_D, (80, oy, 1120, 75), 1, border_radius=8)
-                avg_p1 = sum(r['p1_dr'] for r in rounds) / 6
-                avg_p2 = sum(r['p2_dr'] for r in rounds) / 6
-                draw_text(surf, "OUTCOME (战局推演)", FONT_B, C_GOLD, 100, oy+8, center=False)
-                draw_text(surf, f"{f1['cn']} avg death: {avg_p1:.0f}%", FONT_S, f1['color'], 100, oy+32, center=False)
-                draw_text(surf, f"{f2['cn']} avg death: {avg_p2:.0f}%", FONT_S, f2['color'], 100, oy+54, center=False)
-                draw_text(surf, f"Winner: {battle['winner']}", FONT_T, C_GOLD_L, 480, oy+25, center=False)
-                draw_text(surf, f"Key: {battle['key_round']} - {battle['insight']}", FONT_XS, (180,160,130), 480, oy+52, center=False)
-                draw_text(surf, "Single round only (no best-of-3 swap)", FONT_XS, (160,140,110), 950, oy+35, center=False)
-
-            # ═══════════════════════════════════════════════════════════
-            # PAGE 30: 最终结论
-            # ═══════════════════════════════════════════════════════════
-            elif page == 30:
+            elif page == 24:
                 draw_text(surf, "THE FINAL VERDICT", FONT_H, C_BLOOD, cx, 100, center=True)
                 pygame.draw.line(surf, C_GOLD_D, (cx-250, 135), (cx+250, 135), 2)
                 verdict = [
@@ -2650,9 +2655,9 @@ class Game:
                 draw_text(surf, "Only which side of the table you sit on.", FONT_S, (160,140,110), cx, 582, center=True)
 
             # ═══════════════════════════════════════════════════════════
-            # PAGE 31: 数据来源与方法
+            # PAGE 25: 数据来源与方法
             # ═══════════════════════════════════════════════════════════
-            elif page == 31:
+            elif page == 25:
                 draw_text(surf, "METHODOLOGY & DATA SOURCES", FONT_T, C_GOLD_L, cx, 90, center=True)
                 draw_text(surf, "All claims in this analysis are reproducible and verifiable.",
                           FONT_XS, (180,160,130), cx, 115, center=True)
