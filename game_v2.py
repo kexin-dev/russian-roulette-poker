@@ -1,4 +1,4 @@
-"""
+﻿"""
 ╔══════════════════════════════════════════════════════════════════════╗
 ║     BULLET CARDS — DOOMSDAY WESTERN EDITION (v4.0)              ║
 ║                                                                      ║
@@ -1106,697 +1106,101 @@ class Game:
                 self.phase = 'analysis'
                 self.analysis_page = 0
         elif self.phase == 'analysis':
-            # 翻页：A/D 或 左右箭头
+            # 数学分析界面：按 A/D 或左右箭头翻页，按 ESC/空格返回
             if ev.type == pygame.KEYDOWN:
                 if ev.key in (pygame.K_d, pygame.K_RIGHT):
-                    self.analysis_page = min(55, getattr(self, 'analysis_page', 0) + 1)
+                    self.analysis_page = min(55, self.analysis_page + 1)
                     audio.play('card_flip.wav')
                 elif ev.key in (pygame.K_a, pygame.K_LEFT):
-                    self.analysis_page = max(0, getattr(self, 'analysis_page', 0) - 1)
+                    self.analysis_page = max(0, self.analysis_page - 1)
                     audio.play('card_flip.wav')
                 elif ev.key in (pygame.K_ESCAPE, pygame.K_RETURN, pygame.K_SPACE):
                     self.phase = 'gameover'
                     audio.play('button_click.wav')
-        if self.phase in ('reveal','shooting','round_end'):
-            helps = [
-                "Rules: 50 gold each, hand 1-6 | Select -> Bribe -> Call/RAISE -> Reveal -> Loser shoots",
-                "Hit chance = card/6  |  Tie = no penalty  |  Death or empty hand = game over",
-                "All gold (bets + bribes) is DESTROYED | Opponent's total gold is SECRET",
-            ]
-            for i, line in enumerate(helps):
-                draw_text(surf, line, FONT_XS, (180,160,130), 20, H-80+i*18, shadow=False)
-
-
-    def update(self):
-        for p in self.parts:
-            p["x"]+=p["vx"]; p["y"]+=p["vy"]; p["vy"]+=0.15; p["life"]-=1
-        self.parts = [p for p in self.parts if p["life"]>0]
-
-    def draw(self, surf):
-        for p in self.parts:
-            pygame.draw.circle(surf, p["color"], (int(p["x"]),int(p["y"])), p["size"])
-
-# ═════════════════════════════════════════════════════════════════════
-#  UI Controls
-# ═════════════════════════════════════════════════════════════════════
-class Button:
-    def __init__(self, x, y, w, h, text, font=None, col=C_LEATHER, hot=C_RUST, txt_col=C_BONE):
-        self.rect = pygame.Rect(x, y, w, h)
-        self.text = text
-        self.font = font or FONT_S
-        self.col = col; self.hot = hot; self.txt_col = txt_col
-        self.enabled = True
-    def draw(self, surf):
-        hov = self.rect.collidepoint(pygame.mouse.get_pos()) and self.enabled
-        base = self.hot if hov else self.col
-        draw_rounded(surf, self.rect, 8, base, C_LEATHER_D, 2)
-        pygame.draw.line(surf, (*C_GOLD_L[:3],80), (self.rect.x+4,self.rect.y+2),
-                         (self.rect.right-4,self.rect.y+2), 2)
-        tc = self.txt_col if self.enabled else (120,120,120)
-        draw_text(surf, self.text, self.font, tc, self.rect.centerx, self.rect.centery, center=True)
-    def check(self, ev):
-        return self.enabled and ev.type==pygame.MOUSEBUTTONDOWN and self.rect.collidepoint(ev.pos)
-
-class InputBox:
-    def __init__(self, x, y, w, h, value=0, min_v=0, max_v=999, label=""):
-        self.rect = pygame.Rect(x, y, w, h)
-        self.value = max(min_v, min(max_v, value))
-        self.min_v, self.max_v = min_v, max_v
-        self.label = label
-        self.btn_w = 34
-    def clamp(self):
-        self.value = max(self.min_v, min(self.max_v, int(self.value)))
-    def draw(self, surf):
-        draw_rounded(surf, self.rect, 8, C_PARCHMENT, C_LEATHER, 2)
-        if self.label:
-            draw_text(surf, self.label, FONT_XS, C_LEATHER_D, self.rect.x+8, self.rect.y+4)
-        draw_text(surf, str(self.value), FONT_T, C_LEATHER_D,
-                  self.rect.centerx-10, self.rect.centery+4, center=True)
-        r_plus  = pygame.Rect(self.rect.right-self.btn_w, self.rect.y, self.btn_w, self.rect.h//2)
-        r_minus = pygame.Rect(self.rect.right-self.btn_w, self.rect.y+self.rect.h//2, self.btn_w, self.rect.h//2)
-        draw_rounded(surf, r_plus,  0, C_RUST, None, 0)
-        draw_rounded(surf, r_minus, 0, C_LEATHER, None, 0)
-        draw_text(surf, "+", FONT_B, C_BONE, r_plus.centerx,  r_plus.centery,  center=True, shadow=False)
-        draw_text(surf, "-", FONT_B, C_BONE, r_minus.centerx, r_minus.centery, center=True, shadow=False)
-    def handle(self, ev):
-        if ev.type == pygame.MOUSEBUTTONDOWN:
-            if pygame.Rect(self.rect.right-self.btn_w, self.rect.y, self.btn_w, self.rect.h//2).collidepoint(ev.pos):
-                self.value+=1; self.clamp(); return True
-            if pygame.Rect(self.rect.right-self.btn_w, self.rect.y+self.rect.h//2, self.btn_w, self.rect.h//2).collidepoint(ev.pos):
-                self.value-=1; self.clamp(); return True
-        return False
-
-# ═════════════════════════════════════════════════════════════════════
-#  Player
-# ═════════════════════════════════════════════════════════════════════
-class Player:
-    def __init__(self, name, side, animal):
-        self.name = name
-        self.side = side
-        self.animal = animal
-        self.reset()
-    def reset(self):
-        self.gold = 50
-        self.hand = [1,2,3,4,5,6]
-        self.alive = True
-        self.selected_card = None
-        self.pending_play = None
-        self.round_bet = 0       # 本轮累计下注
-        self.bribe_amount = 0    # 本轮贿赂
-        self.bribe_strategy = 'trick'  # trick / honest
-        self.private_hint = "..."
-        self.card_rects = []
-        self.mood = "normal"
-    @property
-    def is_left(self): return self.side=='left'
-    @property
-    def cx(self): return 200 if self.is_left else W-200
-    @property
-    def char_images(self):
-        return IMG_SNAKE if self.animal=='snake' else IMG_LIZARD
-    def set_mood(self, mood):
-        if mood in self.char_images and self.char_images[mood]:
-            self.mood = mood
-        else:
-            self.mood = "normal"
-    def draw(self, surf, is_active=False, reveal_cards=False, played_revealed=False, show_gold=True):
-        cx, base_y = self.cx, 290
-        panel_w, panel_h = 360, 470
-        panel = pygame.Rect(cx-panel_w//2, base_y-30, panel_w, panel_h)
-        draw_rounded(surf, panel, 14, (*C_LEATHER_D[:3], 210), C_LEATHER, 3)
-        if is_active:
-            glow = make_alpha_surf(panel_w+16, panel_h+16, C_GOLD_L, 40)
-            surf.blit(glow, (panel.x-8, panel.y-8))
-            draw_rounded(surf, panel, 14, (*C_LEATHER[:3],210), C_GOLD_L, 3)
-        char_img = self.char_images.get(self.mood) or self.char_images.get('normal')
-        if char_img:
-            surf.blit(char_img, (cx-CHAR_W//2, base_y-10))
-        else:
-            pygame.draw.circle(surf, C_SAND, (cx, base_y+80), 60)
-        draw_text(surf, self.name, FONT_T, C_GOLD_L, cx, base_y+CHAR_H+8, center=True)
-        sy = base_y + CHAR_H + 34
-        if show_gold:
-            draw_text(surf, f"Gold: {self.gold}", FONT_B, C_GOLD, cx-110, sy, center=False)
-        else:
-            draw_text(surf, "Gold: ???", FONT_B, (150,150,150), cx-110, sy, center=False)
-        draw_text(surf, f"Cards: {len(self.hand)}", FONT_B, C_BONE, cx+30, sy, center=False)
-        if self.round_bet > 0:
-            draw_text(surf, f"Bet: {self.round_bet}", FONT_B, C_RUST, cx-80, sy+28, center=False)
-        if self.selected_card is not None:
-            sx, sy2 = cx-CARD_W//2, base_y-50
-            draw_card(surf, self.selected_card, sx, sy2, face_up=played_revealed)
-        # private hint (only visible when active)
-        if is_active and self.private_hint != "..." and self.alive:
-            hy = base_y + CHAR_H + 66
-            hint_rect = pygame.Rect(cx-150, hy, 300, 36)
-            draw_rounded(surf, hint_rect, 6, (*C_BROWN[:3],200), C_GOLD, 1)
-            draw_text(surf, f"Dealer: {self.private_hint}", FONT_XS, C_GOLD_L, cx, hy+18, center=True)
-        # hand cards
-        self.card_rects = []
-        n = len(self.hand)
-        # 动态计算卡牌间距：牌多时缩小，确保6张牌能在面板内完整显示
-        panel_inner_w = panel_w - CARD_W - 20  # 左右各留10px边距
-        max_spacing = panel_inner_w / max(1, n - 1) if n > 1 else 96
-        spacing = min(96, max_spacing)
-        total_w = max(0, (n - 1) * spacing)
-        start_x = cx - total_w // 2
-        hand_y = base_y + panel_h - CARD_H - 14
-        show_face = is_active or reveal_cards
-        for i, num in enumerate(self.hand):
-            rx = start_x + i*spacing - CARD_W//2
-            ry = hand_y
-            sel = (self.pending_play == num)
-            draw_card(surf, num, rx, ry, face_up=show_face, selected=sel)
-            self.card_rects.append((pygame.Rect(rx, ry, CARD_W, CARD_H), num))
-        if not self.alive:
-            overlay = make_alpha_surf(panel_w, panel_h, (20,10,10), 160)
-            surf.blit(overlay, panel.topleft)
-            draw_text(surf, "DEAD", FONT_H, C_BLOOD, cx, base_y+panel_h//2, center=True)
-
-# ═════════════════════════════════════════════════════════════════════
-#  Dealer (greedy owl — intel broker)
-# ═════════════════════════════════════════════════════════════════════
-class Dealer:
-    def __init__(self):
-        self.reset()
-    def reset(self):
-        self.gold = 0
-        self.bribes = {}
-        self.benefactor = None
-        self.speech = "Lay yer gold on the table... tonight, I decide who lives."
-        self.hints = {}
-    def beg(self, round_num):
-        lines = [
-            "Want to live? Gold buys yer way outta the grave...",
-            "I got intel, and it goes to the highest bidder.",
-            "Heh heh... time to fill my pockets again.",
-            "Fate? Fate can be purchased with enough gold.",
-            "Who pays the most gets the truth from me.",
-            "The cards are dealt... but the truth? That's extra.",
-        ]
-        self.speech = random.choice(lines)
-
-    def _card_hint_true(self, card_val):
-        """生成关于某张牌的真实情报"""
-        if card_val <= 2:
-            return random.choice([
-                "Opponent's card is light... real light.",
-                "I seen his card. Barely a bullet in there.",
-                "Small card. He's bluffing if he acts tough.",
-            ])
-        elif card_val <= 4:
-            return random.choice([
-                "Opponent's card is middling. Nothing fancy.",
-                "Average card. Could go either way.",
-                "Nothing special in his hand, I'll tell ya.",
-            ])
-        else:
-            return random.choice([
-                "Opponent's card is heavy... real heavy.",
-                "That's a big bullet he's carrying. Careful.",
-                "Large card. He might be dangerous.",
-            ])
-
-    def _card_hint_false(self, card_val):
-        """生成关于某张牌的假情报（与真实相反）"""
-        if card_val <= 2:
-            return random.choice([
-                "Opponent's card is huge! He's loaded for bear.",
-                "Big card, real big. I'd be scared if I were you.",
-                "He's packin' serious heat. Watch yourself.",
-            ])
-        elif card_val <= 4:
-            return random.choice([
-                "Opponent's card is tiny. Practically empty.",
-                "Small card. He's got nothing.",
-                "Light as a feather, that one.",
-            ])
-        else:
-            return random.choice([
-                "Opponent's card is tiny. Nothing to fear.",
-                "Small card. He's bluffing if he acts tough.",
-                "Barely a bullet in there. You'll be fine.",
-            ])
-
-    def _card_hint_vague(self):
-        """模糊情报（双方都没贿赂或贿赂相当时）"""
-        return random.choice([
-            "This round's deep water. Swim careful.",
-            "I only see gold, not cards. Pay up and I'll look.",
-            "Someone's gonna die tonight. Maybe both, who knows?",
-            "The cards hold secrets... secrets cost gold.",
-            "I ain't no prophet. But I know who paid.",
-            "Trust no one. Especially not me. Heh heh.",
-        ])
-
-    def collect_and_resolve(self, p1, p2):
-        """收集贿赂，生成双方情报"""
-        self.bribes = {}
-        for p in (p1, p2):
-            if p.bribe_amount > 0 and p.alive:
-                self.bribes[p] = p.bribe_amount
-                self.gold += p.bribe_amount
-
-        self.hints = {}
-        if not self.bribes:
-            # 没人贿赂，双方都得到模糊情报
-            for p in (p1, p2):
-                self.hints[p] = self._card_hint_vague()
-            self.benefactor = None
-            self.speech = random.choice([
-                "No gold tonight? Then may the odds be ever in yer favor.",
-                "A bunch of misers... fate decides then.",
-                "Hmph. No one wants to buy their life?"])
-            return
-
-        # 找出金主
-        sorted_b = sorted(self.bribes.items(), key=lambda kv: kv[1], reverse=True)
-        top, top_amt = sorted_b[0]
-        self.benefactor = top
-
-        # 金主总是得到真实情报（关于对手的牌）
-        opponent = p2 if top == p1 else p1
-        self.hints[top] = self._card_hint_true(opponent.selected_card)
-
-        # 对手得到的情报取决于金主的策略
-        if top.bribe_strategy == 'trick':
-            self.hints[opponent] = self._card_hint_false(top.selected_card)
-        else:
-            # honest：给对手真实情报（反向心理）
-            self.hints[opponent] = self._card_hint_true(top.selected_card)
-
-        # 荷官公开台词
-        self.speech = self._compose_speech(p1, p2, top, top_amt)
-
-    def _compose_speech(self, p1, p2, top, top_amt):
-        lines = []
-        total = sum(self.bribes.values())
-        ratio = top_amt / total if total > 0 else 0
-
-        if ratio > 0.8:
-            lines.append(f"({top.name.split('—')[0].strip()} is my sugar daddy tonight. I gotta play nice.)")
-        elif ratio > 0.55:
-            lines.append(f"({top.name.split('—')[0].strip()} paid well... I owe 'em one.)")
-        else:
-            lines.append("(Both paid up. I don't wanna cross either.)")
-
-        # 模糊评论下注
-        if p1.round_bet > 0 or p2.round_bet > 0:
-            diff = abs(p1.round_bet - p2.round_bet)
-            if diff >= 10:
-                leader = p1 if p1.round_bet > p2.round_bet else p2
-                lines.append(f"{leader.name.split('—')[0].strip()} bets big... real hand or just blowin' smoke?")
-            elif p1.round_bet == p2.round_bet and p1.round_bet > 0:
-                lines.append("Both equally flush... both confident?")
-
-        # 评论手牌数量
-        for p in (p1, p2):
-            if len(p.hand) == 1:
-                lines.append(f"{p.name.split('—')[0].strip()} down to their last card... desperate times.")
-            elif len(p.hand) == 2:
-                lines.append(f"{p.name.split('—')[0].strip()} runnin' low on bullets...")
-
-        if not lines[1:]:
-            lines.append(random.choice([
-                "The air is thick with lies tonight.",
-                "Somebody's hidin' something. I can smell it.",
-                "Gold talks, and I'm all ears.",
-            ]))
-        return " ".join(lines)
-
-    def betting_commentary(self, p1, p2, current_mode, current_bet, raise_count):
-        """加注阶段的实时评论"""
-        mode_name = "HIGH" if current_mode == 'big' else "LOW"
-        comments = []
-        if raise_count == 0:
-            comments.append(f"{p1.name.split('—')[0].strip()} calls {mode_name} with {current_bet} gold.")
-            comments.append(random.choice([
-                "Is he bluffin'? Or packin' heat?",
-                "The first move is always the boldest.",
-                "He's puttin' his gold where his mouth is.",
-            ]))
-        elif raise_count == 1:
-            comments.append(f"{p2.name.split('—')[0].strip()} raises! Flips to {mode_name} with {current_bet} gold!")
-            comments.append(random.choice([
-                "Oh! A challenge! Things heatin' up!",
-                "He don't like the odds. He's changin' 'em!",
-                "Big money, big stones. Or big bluff?",
-            ]))
-        else:
-            comments.append(f"Back to {p1.name.split('—')[0].strip()}! {mode_name} at {current_bet} gold!")
-            comments.append(random.choice([
-                "A war of gold and nerves! Who blinks first?",
-                "This is gettin' expensive. Someone's gonna bleed.",
-                "Raise after raise... egos or cards?",
-            ]))
-        self.speech = " ".join(comments)
-
-    def hint_for(self, player):
-        return self.hints.get(player, "...")
-
-    def draw(self, surf):
-        bx, by = W//2, 65
-        pygame.draw.ellipse(surf, (70,44,24), (bx-260, by+80, 520, 60))
-        if IMG_DEALER:
-            surf.blit(IMG_DEALER, (bx-80, by-10))
-        else:
-            pygame.draw.polygon(surf, C_LEATHER, [(bx-36,by+72),(bx+36,by+72),(bx+48,by-8),(bx-48,by-8)])
-            pygame.draw.circle(surf, (200,172,132), (bx, by-22), 20)
-        pygame.draw.circle(surf, C_GOLD, (bx+70, by+50), 16)
-        draw_text(surf, str(self.gold), FONT_S, C_LEATHER_D, bx+70, by+50, center=True, shadow=False)
-        bw, bh = 560, 96
-        b = pygame.Rect(bx-bw//2, by+96, bw, bh)
-        draw_rounded(surf, b, 12, (245,238,214), C_LEATHER, 2)
-        pygame.draw.polygon(surf, (245,238,214), [(bx-8,by+92),(bx+8,by+92),(bx,by+102)])
-        draw_text(surf, "Dealer", FONT_B, C_LEATHER_D, b.x+14, b.y+8)
-        draw_text(surf, f"Gold: {self.gold}", FONT_B, C_BLOOD, b.right-120, b.y+10)
-        words = self.speech.split()
-        line, yy = "", b.y+40
-        for w in words:
-            if FONT.size(line+w)[0] > bw-28:
-                draw_text(surf, line, FONT, C_LEATHER_D, b.x+14, yy, shadow=False)
-                line, yy = w, yy+24
-            else:
-                line += (" " if line else "") + w
-        if line:
-            draw_text(surf, line, FONT, C_LEATHER_D, b.x+14, yy, shadow=False)
-
-# ═════════════════════════════════════════════════════════════════════
-#  Game State Machine
-# ═════════════════════════════════════════════════════════════════════
-PHASE_ORDER = ['menu','contract','select','bribe','betting','reveal','shooting','round_end','gameover']
-MAX_RAISES = 3  # 最多加注次数
-
-class Game:
-    def __init__(self):
-        self.reset_all()
-    def reset_all(self):
-        self.p1 = Player("Player 1 — Snake", 'left', 'snake')
-        self.p2 = Player("Player 2 — Lizard", 'right', 'lizard')
-        self.dealer = Dealer()
-        self.particles = Particles()
-        self.phase = 'menu'
-        self.round_num = 0
-        self.message = "Welcome to the deadliest saloon in the West. Press START to begin."
-        self.message_timer = 0
-        self.shoot_target = None
-        self.shoot_anim = 0
-        self.current_player = None
-        self.bribe_input = None
-        self.buttons = {}
-        self.turn_announce_timer = 0
-        # 加注阶段状态
-        self.bet_current = 0       # 当前下注额
-        self.bet_mode = None       # 当前规则 big/small
-        self.bet_turn = None       # 当前叫价方
-        self.raise_count = 0       # 加注次数
-        self.bet_input = None
-        self.flash_alpha = 0
-        self.blood_alpha = 0
-        self.screen_shake = 0
-        self.muzzle_flash = 0
-
-    def new_round(self):
-        self.round_num += 1
-        for p in (self.p1, self.p2):
-            p.selected_card = None
-            p.round_bet = 0
-            p.bribe_amount = 0
-            p.bribe_strategy = 'trick'
-            p.pending_play = None
-            p.private_hint = "..."
-            p.set_mood("normal")
-        self.dealer.reset()
-        self.shoot_target = None
-        self.shoot_anim = 0
-        self.bet_current = 0
-        self.bet_mode = None
-        self.raise_count = 0
-        self.flash_alpha = 0
-        self.blood_alpha = 0
-        self.screen_shake = 0
-        self._start_select()
-
-    def _announce_turn(self, player, action):
-        self.current_player = player
-        self.turn_announce_timer = 120
-        self.message = f"{player.name}'s turn — {action}. Other player, look away!"
-
-    # ── Select Phase ───────────────────────────────────────────────
-    def _start_select(self):
-        self.phase = 'select'
-        self._announce_turn(self.p1, "choose a card to play")
-        self.buttons = {}
-        self.buttons['play_btn'] = Button(W//2-100, 720, 200, 50, "Confirm Play", font=FONT_B, col=C_RUST, hot=C_BLOOD)
-
-    def _select_next(self):
-        if self.current_player == self.p1:
-            self._announce_turn(self.p2, "choose a card to play")
-        else:
-            self.current_player = None
-            # 选牌结束，进入贿赂阶段（第1轮跳过贿赂）
-            if self.round_num == 1:
-                self.dealer.speech = "First round... no bribes needed. May the odds be ever in yer favor."
-                for p in (self.p1, self.p2):
-                    p.private_hint = self.dealer._card_hint_vague()
-                self._start_betting()
-            else:
-                self._start_bribe()
-
-    # ── Bribe Phase ────────────────────────────────────────────────
-    def _start_bribe(self):
-        self.phase = 'bribe'
-        self.dealer.beg(self.round_num)
-        self._announce_turn(self.p1, "enter your bribe (0 = skip)")
-        self.bribe_input = InputBox(W//2-70, 640, 140, 56, 0, 0, self.p1.gold, "Bribe Gold")
-        self.buttons = {}
-        self.buttons['strat'] = Button(W//2+60, 710, 160, 40, "Strat: TRICK")
-        self.buttons['bribe_ok'] = Button(W//2-100, 760, 200, 44, "Confirm Bribe", font=FONT_B, col=C_RUST, hot=C_BLOOD)
-
-    def _bribe_next(self):
-        if self.current_player == self.p1:
-            self.p1.bribe_amount = max(0, min(self.p1.gold, self.bribe_input.value))
-            self.p1.gold -= self.p1.bribe_amount
-            self._announce_turn(self.p2, "enter your bribe (0 = skip)")
-            self.bribe_input = InputBox(W//2-70, 640, 140, 56, 0, 0, self.p2.gold, "Bribe Gold")
-            self.buttons['strat'].text = "Strat: TRICK"
-            self.p2.bribe_strategy = 'trick'
-        else:
-            self.p2.bribe_amount = max(0, min(self.p2.gold, self.bribe_input.value))
-            self.p2.gold -= self.p2.bribe_amount
-            # 结算贿赂，生成情报
-            self.dealer.collect_and_resolve(self.p1, self.p2)
-            self.p1.private_hint = self.dealer.hint_for(self.p1)
-            self.p2.private_hint = self.dealer.hint_for(self.p2)
-            self.bribe_input = None
-            self._start_betting()
-
-    # ── Betting Phase (call/raise) ─────────────────────────────────
-    def _start_betting(self):
-        self.phase = 'betting'
-        self.bet_turn = self.p1
-        self.raise_count = 0
-        self.bet_current = 0
-        self.bet_mode = None
-        self._build_bet_ui(opening=True)
-        self.message = f"Betting: {self.bet_turn.name}'s turn — call HIGH/LOW + bet"
-
-    def _build_bet_ui(self, opening=False):
-        max_bet = self.bet_turn.gold
-        if opening:
-            # 开局叫价：选规则+下注
-            self.bet_input = InputBox(W//2-70, 620, 140, 52, 1, 1, max_bet, "Bet Gold")
-            self.buttons['mode'] = Button(W//2-180, 690, 120, 40, "Mode: HIGH")
-            self.buttons['call'] = Button(W//2-100, 750, 200, 50, "PLACE BET", font=FONT_B, col=C_RUST, hot=C_BLOOD)
-        else:
-            # 跟注/加注：加注必须大于当前下注
-            min_raise = self.bet_current + 1
-            self.bet_input = InputBox(W//2-70, 620, 140, 52, min_raise, min_raise, max_bet, "Raise To")
-            self.buttons['call'] = Button(W//2-180, 700, 140, 50, "CALL", font=FONT_B, col=C_GREEN, hot=(80,140,80))
-            self.buttons['raise'] = Button(W//2+40, 700, 140, 50, "RAISE & FLIP", font=FONT_B, col=C_RUST, hot=C_BLOOD)
-
-    def _clear_bet_ui(self):
-        self.bet_input = None
-        for k in ('mode','call','raise'):
-            self.buttons.pop(k, None)
-
-    def _place_opening_bet(self):
-        """玩家1开局叫价"""
-        amt = max(1, min(self.bet_turn.gold, self.bet_input.value))
-        mode = self.buttons['mode'].text.split(':')[1].strip().lower()
-        self.bet_mode = 'big' if mode == 'high' else 'small'
-        self.bet_current = amt
-        self.bet_turn.gold -= amt
-        self.bet_turn.round_bet += amt
-        self.raise_count = 0
-        # 荷官评论
-        self.dealer.betting_commentary(self.p1, self.p2, self.bet_mode, self.bet_current, 0)
-        # 轮到玩家2
-        self.bet_turn = self.p2
-        self._build_bet_ui(opening=False)
-        self.message = f"{self.p1.name} calls {'HIGH' if self.bet_mode=='big' else 'LOW'} with {amt}g. {self.p2.name}: CALL or RAISE?"
-
-    def _call_bet(self):
-        """跟注：支付差额，接受当前规则"""
-        owed = self.bet_current - self.bet_turn.round_bet
-        owed = max(0, min(owed, self.bet_turn.gold))
-        self.bet_turn.gold -= owed
-        self.bet_turn.round_bet += owed
-        self._finish_betting()
-
-    def _raise_bet(self):
-        """加注：支付到新金额，翻转规则"""
-        new_amt = max(self.bet_current + 1, min(self.bet_turn.gold, self.bet_input.value))
-        # 翻转规则
-        self.bet_mode = 'small' if self.bet_mode == 'big' else 'big'
-        # 支付差额
-        owed = new_amt - self.bet_turn.round_bet
-        owed = max(0, min(owed, self.bet_turn.gold))
-        self.bet_turn.gold -= owed
-        self.bet_turn.round_bet += owed
-        self.bet_current = new_amt
-        self.raise_count += 1
-        # 荷官评论
-        commentator = self.bet_turn
-        self.dealer.betting_commentary(self.p1, self.p2, self.bet_mode, self.bet_current, self.raise_count)
-        # 切换到对手
-        self.bet_turn = self.p2 if self.bet_turn == self.p1 else self.p1
-        # 检查是否达到最大加注次数
-        if self.raise_count >= MAX_RAISES:
-            # 强制跟注
-            owed = self.bet_current - self.bet_turn.round_bet
-            owed = max(0, min(owed, self.bet_turn.gold))
-            self.bet_turn.gold -= owed
-            self.bet_turn.round_bet += owed
-            self.message = f"Max raises reached! {self.bet_turn.name} must call."
-            self._finish_betting()
-        else:
-            self._build_bet_ui(opening=False)
-            self.message = f"{commentator.name} raises to {new_amt}g and flips to {'HIGH' if self.bet_mode=='big' else 'LOW'}! {self.bet_turn.name}: CALL or RAISE?"
-
-    def _finish_betting(self):
-        self._clear_bet_ui()
-        self.phase = 'reveal'
-        self.message_timer = 150
-        mode_name = 'HIGH' if self.bet_mode == 'big' else 'LOW'
-        total_destroyed = self.p1.round_bet + self.p2.round_bet + self.p1.bribe_amount + self.p2.bribe_amount
-        self.message = f"REVEAL! Mode: {mode_name}. {total_destroyed}g destroyed to the crows."
-
-    # ── Resolve Round ──────────────────────────────────────────────
-    def _resolve_round(self):
-        c1, c2 = self.p1.selected_card, self.p2.selected_card
-        mode = self.bet_mode
-        if (mode=='big' and c1>c2) or (mode=='small' and c1<c2):
-            winner, loser = self.p1, self.p2
-        elif (mode=='big' and c1<c2) or (mode=='small' and c1>c2):
-            winner, loser = self.p2, self.p1
-        else:
-            self.message = f"TIE! Both played {c1}. Cards consumed, no one shoots."
-            self.p1.set_mood("normal")
-            self.p2.set_mood("normal")
-            self.phase = 'round_end'
-            return
-        mode_name = 'HIGH' if mode == 'big' else 'LOW'
-        self.message = (f"{winner.name} wins ({mode_name} mode)! {loser.name} points the gun at themselves "
-                       f"({loser.selected_card} bullets, {loser.selected_card*100//6}% hit chance)")
-        winner.set_mood("victory")
-        loser.set_mood("scared")
-        self.shoot_target = loser
-        self.phase = 'shooting'
-        self.shoot_anim = 180
-
-    def _check_gameover(self):
-        return (not self.p1.alive) or (not self.p2.alive) or \
-               (len(self.p1.hand)==0) or (len(self.p2.hand)==0)
-
-    # ── Events ─────────────────────────────────────────────────────
-    def handle(self, ev):
-        if self.phase == 'menu':
-            if 'start' in self.buttons and self.buttons['start'].check(ev):
-                self.phase = 'contract'
-                self.buttons = {}
-        elif self.phase == 'contract':
-            if 'accept' in self.buttons and self.buttons['accept'].check(ev):
-                self.new_round()
-        elif self.phase == 'bribe':
-            if self.bribe_input: self.bribe_input.handle(ev)
-            cp = self.current_player
-            if ev.type == pygame.MOUSEBUTTONDOWN:
-                if 'strat' in self.buttons and self.buttons['strat'].rect.collidepoint(ev.pos):
-                    cp.bribe_strategy = 'honest' if cp.bribe_strategy=='trick' else 'trick'
-                    self.buttons['strat'].text = f"Strat: {'TRICK' if cp.bribe_strategy=='trick' else 'HONEST'}"
-            if 'bribe_ok' in self.buttons and self.buttons['bribe_ok'].check(ev):
-                self._bribe_next()
-        elif self.phase == 'select':
-            cp = self.current_player
-            if ev.type == pygame.MOUSEBUTTONDOWN and cp and cp.alive:
-                for rect, num in cp.card_rects:
-                    if rect.collidepoint(ev.pos):
-                        cp.pending_play = num if cp.pending_play != num else None
-                        return
-            if 'play_btn' in self.buttons and self.buttons['play_btn'].check(ev):
-                if cp and cp.pending_play is not None:
-                    cp.selected_card = cp.pending_play
-                    cp.hand.remove(cp.pending_play)
-                    cp.pending_play = None
-                    self.message = f"{cp.name} has played a card."
-                    self._select_next()
-        elif self.phase == 'reveal':
-            pass
-        elif self.phase == 'betting':
-            if self.bet_input: self.bet_input.handle(ev)
-            if self.raise_count == 0 and self.bet_turn == self.p1:
-                # 开局叫价
-                if ev.type == pygame.MOUSEBUTTONDOWN:
-                    if 'mode' in self.buttons and self.buttons['mode'].rect.collidepoint(ev.pos):
-                        cur = self.buttons['mode'].text
-                        self.buttons['mode'].text = "Mode: LOW" if "HIGH" in cur else "Mode: HIGH"
-                if 'call' in self.buttons and self.buttons['call'].check(ev):
-                    self._place_opening_bet()
-            else:
-                # 跟注/加注
-                if 'call' in self.buttons and self.buttons['call'].check(ev):
-                    self._call_bet()
-                elif 'raise' in self.buttons and self.buttons['raise'].check(ev):
-                    self._raise_bet()
-        elif self.phase == 'round_end':
-            if ev.type == pygame.KEYDOWN and ev.key == pygame.K_SPACE:
-                if self._check_gameover(): self.phase = 'gameover'
-                else: self.new_round()
-        elif self.phase == 'gameover':
-            if 'restart' in self.buttons and self.buttons['restart'].check(ev):
-                self.reset_all()
 
     # ── Update ─────────────────────────────────────────────────────
     def update(self):
+        # 慢动作因子：命中时减速
+        dt = 0.35 if self.slow_motion > 0 else 1.0
+        if self.slow_motion > 0:
+            self.slow_motion -= 1
+
         self.particles.update()
+        # 背景尘土持续生成
+        self.bg_dust_timer += 1
+        if self.bg_dust_timer >= 8:
+            self.bg_dust_timer = 0
+            self.particles.emit_dust(random.randint(100, W-100), random.randint(300, 600), 2)
+        # 荷官轻微晃动
+        self.dealer_bob = math.sin(pygame.time.get_ticks() * 0.002) * 3
+
         if self.turn_announce_timer > 0:
             self.turn_announce_timer -= 1
         if self.message_timer > 0:
             self.message_timer -= 1
             if self.message_timer == 0 and self.phase == 'reveal':
                 self._resolve_round()
+
+        # ── 卡牌飞行动画更新 ──
+        anims_to_remove = []
+        for key, anim in self.card_anims.items():
+            anim["progress"] += 0.04 * dt
+            if anim["progress"] >= 1.0:
+                anim["progress"] = 1.0
+                anims_to_remove.append(key)
+            # 缓动函数：ease-out cubic
+            t = anim["progress"]
+            ease = 1 - (1 - t) ** 3
+            anim["cur_x"] = anim["x"] + (anim["tx"] - anim["x"]) * ease
+            # 抛物线弧度
+            arc_height = -80 * math.sin(t * math.pi)
+            anim["cur_y"] = anim["y"] + (anim["ty"] - anim["y"]) * ease + arc_height
+            anim["cur_rot"] = (1 - ease) * 360  # 飞行中旋转
+        for key in anims_to_remove:
+            del self.card_anims[key]
+
+        # ── 翻牌动画更新 ──
+        if self.phase == 'reveal' and self.flip_anim < 1.0:
+            self.flip_anim += 0.035 * dt
+            if self.flip_anim > 1.0:
+                self.flip_anim = 1.0
+
+        # ── 转轮旋转动画更新 ──
+        if self.cylinder_spinning:
+            self.cylinder_angle += self.cylinder_spin_speed * dt
+            self.cylinder_spin_speed *= 0.985  # 逐渐减速
+            if self.cylinder_spin_speed < 0.05:
+                self.cylinder_spinning = False
+                self.cylinder_spin_speed = 0
+
         if self.phase == 'shooting' and self.shoot_target:
             self.shoot_anim -= 1
             t = 180 - self.shoot_anim
             if t == 25:
                 self.muzzle_flash = 15
                 self.screen_shake = 8
+                # 枪口火花+烟雾
+                gx = W//2 + (-180 if self.shoot_target.is_left else 180)
+                self.particles.emit_spark(gx, 460, 25)
+                self.particles.emit_smoke(gx, 450, 12)
             if t == 30:
                 bullet = self.shoot_target.selected_card
                 hit = random.random() < bullet/6.0
                 if hit:
+                    audio.play('gunshot.wav')
                     self.shoot_target.alive = False
                     self.shoot_target.set_mood("dead")
                     self.flash_alpha = 255
                     self.blood_alpha = 255
                     self.screen_shake = 25
+                    self.slow_motion = 40  # 命中时慢动作
                     self.particles.emit(W//2, H//2-40, C_BLOOD, 120, 16, 70)
                     self.particles.emit(W//2, H//2-40, (200,50,50), 60, 10, 50)
                     self.message = f"{self.shoot_target.name} takes a bullet to the skull! DEAD"
                     other = self.p2 if self.shoot_target==self.p1 else self.p1
                     other.set_mood("victory")
                 else:
+                    audio.play('empty_chamber.wav')
                     self.shoot_target.set_mood("survivor")
                     self.screen_shake = 12
                     self.particles.emit(W//2, H//2-40, (220,200,120), 70, 12, 50)
@@ -1832,6 +1236,19 @@ class Game:
         self.p1.draw(canvas, is_active=p1_active, reveal_cards=reveal_cards, played_revealed=played_revealed, show_gold=p1_show_gold)
         self.p2.draw(canvas, is_active=p2_active, reveal_cards=reveal_cards, played_revealed=played_revealed, show_gold=p2_show_gold)
         self._draw_table(canvas)
+        # 绘制飞行中的卡牌
+        for anim in self.card_anims.values():
+            if "cur_x" in anim:
+                cx, cy = anim["cur_x"], anim["cur_y"]
+                rot = anim.get("cur_rot", 0)
+                card_img = IMG_CARD_BACK  # 飞行中背面朝上
+                if card_img:
+                    rotated = pygame.transform.rotate(card_img, rot)
+                    rw, rh = rotated.get_size()
+                    canvas.blit(rotated, (int(cx - rw//2), int(cy - rh//2)))
+                # 飞行轨迹粒子
+                if random.random() < 0.3 and hasattr(self, 'particles'):
+                    self.particles.emit_dust(cx, cy, 1)
         if self.muzzle_flash > 0 and self.shoot_target:
             gx = W//2 + (-180 if self.shoot_target.is_left else 180)
             mf_alpha = int(255 * (self.muzzle_flash / 15))
@@ -1842,13 +1259,21 @@ class Game:
         self._draw_ui(canvas)
         self._draw_topbar(canvas)
         if self.turn_announce_timer > 0 and self.current_player:
+            # 滑入动画：前30帧从左侧滑入
+            slide_progress = min(1.0, (120 - self.turn_announce_timer) / 30.0)
+            slide_offset = int((1 - slide_progress) * -W * 0.6)
             alpha = min(255, self.turn_announce_timer * 4)
+            banner_y = H//2 - 40
             banner = make_alpha_surf(W, 80, C_BROWN, min(220, alpha))
-            canvas.blit(banner, (0, H//2-40))
-            pygame.draw.line(canvas, C_GOLD, (0, H//2-40), (W, H//2-40), 3)
-            pygame.draw.line(canvas, C_GOLD, (0, H//2+40), (W, H//2+40), 3)
+            canvas.blit(banner, (slide_offset, banner_y))
+            # 金色边框线
+            pygame.draw.line(canvas, C_GOLD, (slide_offset, banner_y), (slide_offset+W, banner_y), 3)
+            pygame.draw.line(canvas, C_GOLD, (slide_offset, banner_y+80), (slide_offset+W, banner_y+80), 3)
             name = self.current_player.name
-            draw_text(canvas, f"{name}'S TURN", FONT_H, C_GOLD_L, W//2, H//2, center=True)
+            # 文字脉动
+            text_scale = 1.0 + 0.03 * math.sin(pygame.time.get_ticks() * 0.008)
+            banner_font = pygame.font.SysFont("georgia", int(44 * text_scale), bold=True, italic=True)
+            draw_text(canvas, f"{name}'S TURN", banner_font, C_GOLD_L, W//2 + slide_offset, H//2, center=True)
         if self.screen_shake > 0:
             ox = random.randint(-self.screen_shake, self.screen_shake)
             oy = random.randint(-self.screen_shake, self.screen_shake)
@@ -1882,17 +1307,37 @@ class Game:
 
     def _draw_table(self, surf):
         cx = W//2
+        # 转轮旋转动画
         if IMG_ROULETTE and self.phase in ('shooting','round_end','reveal','betting'):
-            surf.blit(IMG_ROULETTE, (cx-70, 370))
+            cyl_img = IMG_ROULETTE
+            if self.cylinder_spinning or self.cylinder_angle != 0:
+                cyl_img = pygame.transform.rotate(IMG_ROULETTE, math.degrees(self.cylinder_angle))
+            rw, rh = cyl_img.get_size()
+            surf.blit(cyl_img, (cx - rw//2, 370 + (140 - rh)//2))
+            # 旋转时加发光
+            if self.cylinder_spinning:
+                glow = make_alpha_surf(rw+20, rh+20, C_GOLD_L, 30)
+                surf.blit(glow, (cx - rw//2 - 10, 370 + (140-rh)//2 - 10))
         if self.phase in ('reveal','betting','shooting','round_end'):
             cards_up = self.phase in ('reveal','shooting','round_end')
+            # 应用翻牌动画
+            flip_p = self.flip_anim if self.phase == 'reveal' else 1.0
             if self.p1.selected_card is not None:
-                draw_card(surf, self.p1.selected_card, cx-200, 470, face_up=cards_up, scale=1.1)
+                draw_card(surf, self.p1.selected_card, cx-200, 470, face_up=cards_up, scale=1.1, flip_progress=0 if cards_up else 0)
             if self.p2.selected_card is not None:
-                draw_card(surf, self.p2.selected_card, cx+110, 470, face_up=cards_up, scale=1.1)
+                draw_card(surf, self.p2.selected_card, cx+110, 470, face_up=cards_up, scale=1.1, flip_progress=0 if cards_up else 0)
+            # 翻牌动画期间，在桌面位置绘制翻转中的卡牌
+            if self.phase == 'reveal' and 0 < flip_p < 1:
+                if self.p1.selected_card is not None:
+                    draw_card(surf, self.p1.selected_card, cx-200, 470, face_up=True, scale=1.1, flip_progress=flip_p)
+                if self.p2.selected_card is not None:
+                    draw_card(surf, self.p2.selected_card, cx+110, 470, face_up=True, scale=1.1, flip_progress=flip_p)
             if self.bet_mode and cards_up:
                 mode_txt = "HIGH" if self.bet_mode=='big' else "LOW"
-                draw_text(surf, mode_txt, FONT_H, C_BLOOD, cx, 420, center=True)
+                # 模式文字脉动效果
+                pulse = 1.0 + 0.05 * math.sin(pygame.time.get_ticks() * 0.005)
+                mode_font = pygame.font.SysFont("georgia", int(44 * pulse), bold=True, italic=True)
+                draw_text(surf, mode_txt, mode_font, C_BLOOD, cx, 420, center=True)
         pot = self.p1.round_bet + self.p2.round_bet
         if pot > 0 or self.phase == 'betting':
             destroyed = self.p1.round_bet + self.p2.round_bet + self.p1.bribe_amount + self.p2.bribe_amount
@@ -1902,7 +1347,7 @@ class Game:
     def _draw_topbar(self, surf):
         bar = pygame.Rect(10, 8, W-20, 52)
         draw_rounded(surf, bar, 10, (*C_BROWN[:3], 220), C_LEATHER, 2)
-        draw_text(surf, f"Round {self.round_num}", FONT_B, C_GOLD_L, 30, 34)
+        draw_text(surf, f"R{self.match_round} | {self.p1_match_wins}-{self.p2_match_wins}", FONT_B, C_GOLD_L, 30, 34)
         phase_cn = {
             'menu':'Menu','bribe':'Bribe','select':'Select',
             'reveal':'Reveal','betting':'Betting','shooting':'Shooting',
@@ -1911,16 +1356,31 @@ class Game:
         draw_text(surf, f"Phase: {phase_cn.get(self.phase,'')}", FONT_B, C_BONE, 180, 34)
         draw_text(surf, self.message, FONT, C_BONE, W//2, 34, center=True)
         draw_text(surf, f"Dealer: {self.dealer.gold}g", FONT_S, C_GOLD, W-40, 34, center=True)
+        # 静音提示
+        if audio.muted:
+            draw_text(surf, "[M] UNMUTE", FONT_XS, C_BLOOD, W-130, 34, center=True)
 
     def _draw_ui(self, surf):
         cx = W//2
         if self.phase == 'menu':
+            # 菜单背景粒子
+            if random.random() < 0.2:
+                self.particles.emit_dust(random.randint(0, W), random.randint(400, 700), 1)
             self.buttons['start'] = Button(cx-140, H//2+80, 280, 72, "START GAME", font=FONT_H, col=C_RUST, hot=C_BLOOD)
             self.buttons['start'].draw(surf)
-            draw_text(surf, "BULLET", FONT_H, C_GOLD, cx, H//2-140, center=True)
-            draw_text(surf, "CARDS", FONT_H, C_BLOOD, cx, H//2-70, center=True)
+            # 标题脉动效果
+            t = pygame.time.get_ticks()
+            bullet_scale = 1.0 + 0.04 * math.sin(t * 0.004)
+            bullet_font = pygame.font.SysFont("georgia", int(44 * bullet_scale), bold=True, italic=True)
+            draw_text(surf, "BULLET", bullet_font, C_GOLD, cx, H//2-140, center=True)
+            cards_scale = 1.0 + 0.04 * math.sin(t * 0.004 + 0.5)
+            cards_font = pygame.font.SysFont("georgia", int(44 * cards_scale), bold=True, italic=True)
+            draw_text(surf, "CARDS", cards_font, C_BLOOD, cx, H//2-70, center=True)
             draw_text(surf, "Doomsday Western — Two-Player Duel", FONT_T, C_BONE, cx, H//2-10, center=True)
-            draw_text(surf, "Snake vs Lizard  \u2022  Bribe  \u2022  Bluff  \u2022  Survive", FONT_B, C_GOLD_L, cx, H//2+30, center=True)
+            # 副标题闪烁
+            sub_alpha = 180 + int(75 * math.sin(t * 0.003))
+            sub_color = (min(255, C_GOLD_L[0]), min(255, C_GOLD_L[1]), min(255, C_GOLD_L[2]))
+            draw_text(surf, "Snake vs Lizard  \u2022  Bribe  \u2022  Bluff  \u2022  Survive", FONT_B, sub_color, cx, H//2+30, center=True)
         elif self.phase == 'contract':
             paper = pygame.Rect(cx-420, 60, 840, 620)
             draw_rounded(surf, paper, 16, (210, 185, 140), C_BLOOD, 4)
@@ -1990,19 +1450,71 @@ class Game:
         elif self.phase == 'gameover':
             overlay = make_alpha_surf(W, H, (20,10,10), 180)
             surf.blit(overlay, (0,0))
-            if not self.p1.alive or len(self.p1.hand) == 0:
-                winner = self.p2
-                reason = "Snake took a bullet" if not self.p1.alive else "Snake ran out of cards"
+            # 第一次进入时结算本局胜者
+            if self.match_round_winner is None and not self.match_final_over:
+                if not self.p1.alive:
+                    self.match_round_winner = self.p2
+                    round_reason = "Snake took a bullet"
+                elif not self.p2.alive:
+                    self.match_round_winner = self.p1
+                    round_reason = "Lizard took a bullet"
+                elif len(self.p1.hand) == 0 and len(self.p2.hand) == 0:
+                    self.match_round_winner = None  # 平局
+                    round_reason = "Both guns empty — DRAW!"
+                elif len(self.p1.hand) == 0:
+                    self.match_round_winner = self.p2
+                    round_reason = "Snake ran out of cards"
+                else:
+                    self.match_round_winner = self.p1
+                    round_reason = "Lizard ran out of cards"
+                # 更新胜负计数
+                if self.match_round_winner == self.p1:
+                    self.p1_match_wins += 1
+                elif self.match_round_winner == self.p2:
+                    self.p2_match_wins += 1
+                # 检查是否最终分出胜负（三局两胜）
+                if self.p1_match_wins >= 2 or self.p2_match_wins >= 2:
+                    self.match_final_over = True
+                    self.match_winner = self.p1 if self.p1_match_wins >= 2 else self.p2
+            # 金色粒子雨
+            if random.random() < 0.3:
+                self.particles.emit_gold(random.randint(100, W-100), -20, 2, random.randint(200, W-200), H+50)
+            # 标题
+            title_scale = 1.0 + 0.04 * math.sin(pygame.time.get_ticks() * 0.005)
+            title_font = pygame.font.SysFont("georgia", int(40 * title_scale), bold=True, italic=True)
+            if self.match_final_over:
+                draw_text(surf, "MATCH OVER", title_font, C_BLOOD, cx, H//2-130, center=True)
+                # 最终胜者
+                winner_scale = 1.0 + 0.03 * math.sin(pygame.time.get_ticks() * 0.006 + 1)
+                winner_font = pygame.font.SysFont("georgia", int(44 * winner_scale), bold=True, italic=True)
+                draw_text(surf, f"{self.match_winner.name} WINS THE MATCH!", winner_font, C_GOLD, cx, H//2-50, center=True)
+                draw_text(surf, f"Final Score: {self.p1_match_wins} — {self.p2_match_wins}", FONT_T, C_BONE, cx, H//2+5, center=True)
+                draw_text(surf, f"Best of 3 — {self.match_winner.name} takes the saloon.",
+                          FONT_B, C_GOLD_L, cx, H//2+40, center=True)
+                draw_text(surf, "Press [A] to reveal the mathematical truth...",
+                          FONT_S, (180,160,130), cx, H//2+68, center=True)
+                self.buttons['restart'] = Button(cx-130, H//2+95, 260, 60, "PLAY AGAIN", font=FONT_T, col=C_RUST, hot=C_BLOOD)
+                self.buttons['restart'].draw(surf)
             else:
-                winner = self.p1
-                reason = "Lizard took a bullet" if not self.p2.alive else "Lizard ran out of cards"
-            draw_text(surf, "GAME OVER", FONT_H, C_BLOOD, cx, H//2-120, center=True)
-            draw_text(surf, f"{winner.name} WINS!", FONT_H, C_GOLD, cx, H//2-40, center=True)
-            draw_text(surf, reason, FONT_B, C_BONE, cx, H//2+10, center=True)
-            draw_text(surf, f"Remaining Gold — {winner.name}: {winner.gold} | Dealer: {self.dealer.gold}",
-                      FONT_B, C_GOLD_L, cx, H//2+44, center=True)
-            self.buttons['restart'] = Button(cx-130, H//2+100, 260, 60, "PLAY AGAIN", font=FONT_T, col=C_RUST, hot=C_BLOOD)
-            self.buttons['restart'].draw(surf)
+                # 局间休息：显示本局结果和大比分
+                draw_text(surf, f"ROUND {self.match_round} OVER", title_font, C_BLOOD, cx, H//2-130, center=True)
+                if self.match_round_winner:
+                    rw_scale = 1.0 + 0.03 * math.sin(pygame.time.get_ticks() * 0.006 + 1)
+                    rw_font = pygame.font.SysFont("georgia", int(36 * rw_scale), bold=True, italic=True)
+                    draw_text(surf, f"{self.match_round_winner.name} wins round {self.match_round}!", rw_font, C_GOLD, cx, H//2-55, center=True)
+                else:
+                    draw_text(surf, "DRAW! No winner this round.", FONT_T, C_GOLD_L, cx, H//2-55, center=True)
+                # 大比分
+                score_scale = 1.0 + 0.02 * math.sin(pygame.time.get_ticks() * 0.004)
+                score_font = pygame.font.SysFont("georgia", int(48 * score_scale), bold=True, italic=True)
+                draw_text(surf, f"{self.p1_match_wins}  —  {self.p2_match_wins}", score_font, C_GOLD_L, cx, H//2+5, center=True)
+                draw_text(surf, f"{self.p1.name.split('—')[0].strip()} vs {self.p2.name.split('—')[0].strip()}",
+                          FONT_B, C_BONE, cx, H//2+45, center=True)
+                draw_text(surf, "Best of 3 — first to 2 wins. Swap sides next round.",
+                          FONT_B, (180,160,130), cx, H//2+72, center=True)
+                # 换边按钮
+                self.buttons['restart'] = Button(cx-160, H//2+105, 320, 56, "NEXT ROUND — SWAP SIDES", font=FONT_B, col=C_RUST, hot=C_BLOOD)
+                self.buttons['restart'].draw(surf)
         elif self.phase == 'analysis':
             # ═══ 数学真相揭示界面（56页深度分析） ═══
             overlay = make_alpha_surf(W, H, (8,4,2), 235)
