@@ -3,7 +3,7 @@
 ║     BULLET CARDS — DOOMSDAY WESTERN EDITION (v4.0)              ║
 ║                                                                      ║
 ║  ▸ Two-player local duel, 50 gold each, hand 1~6                   ║
-║  ▸ Flow: Select → Bribe → Betting(call/raise) → Reveal → Shoot     ║
+║  ▸ Flow: Select  Bribe  Betting(call/raise)  Reveal  Shoot     ║
 ║  ▸ Player 1 calls HIGH/LOW + bet; P2 can call or raise to flip    ║
 ║  ▸ Bribe dealer for intel; benefactor can make dealer lie/tell truth║
 ║  ▸ Loser shoots self: bullets = card value, hit chance = value/6   ║
@@ -152,10 +152,14 @@ ASSET_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'assets')
 def load_img(name, scale_to=None):
     path = os.path.join(ASSET_DIR, name)
     if os.path.exists(path):
-        img = pygame.image.load(path).convert_alpha()
-        if scale_to:
-            img = pygame.transform.smoothscale(img, scale_to)
-        return img
+        try:
+            img = pygame.image.load(path).convert_alpha()
+            if scale_to:
+                img = pygame.transform.smoothscale(img, scale_to)
+            return img
+        except Exception as e:
+            print(f"Warning: Failed to load {name}: {e}")
+            return None
     return None
 
 IMG_BG_MENU   = load_img('background_menu.png', (W, H))
@@ -548,7 +552,7 @@ class Dealer:
     def _card_hint_false(self, card_val):
         """生成关于某张牌的假情报（与真实相反，三档信号都可能出现）"""
         if card_val <= 2:
-            # 真实是 small → 假情报随机说 medium 或 large
+            # 真实是 small  假情报随机说 medium 或 large
             return random.choice([
                 "Opponent's card is middling. Nothing fancy.",
                 "Average card. Could go either way.",
@@ -557,7 +561,7 @@ class Dealer:
                 "He's packin' serious heat. Watch yourself.",
             ])
         elif card_val <= 4:
-            # 真实是 medium → 假情报随机说 small 或 large
+            # 真实是 medium  假情报随机说 small 或 large
             return random.choice([
                 "Opponent's card is tiny. Practically empty.",
                 "Small card. He's got nothing.",
@@ -567,7 +571,7 @@ class Dealer:
                 "Large card. He might be dangerous.",
             ])
         else:
-            # 真实是 large → 假情报随机说 small 或 medium
+            # 真实是 large  假情报随机说 small 或 medium
             return random.choice([
                 "Opponent's card is tiny. Nothing to fear.",
                 "Small card. He's bluffing if he acts tough.",
@@ -743,11 +747,12 @@ class Game:
         self.round_num = 0
         # ── 三局两胜换边制 ──
         self.match_round = 1          # 当前第几局
-        self.p1_match_wins = 0       # P1胜场数
-        self.p2_match_wins = 0       # P2胜场数
+        self.match_wins = {'snake': 0, 'lizard': 0}  # 按玩家身份记分
         self.match_round_winner = None  # 本局胜者（None=未结算/平局）
+        self.match_round_reason = ""    # 本局结束原因
         self.match_final_over = False    # 是否最终分出胜负
         self.match_winner = None         # 最终胜者
+        self._round_settled = False      # 本局是否已结算（防止重复结算）
         self.message = "Welcome to the deadliest saloon in the West. Press START to begin."
         self.message_timer = 0
         self.shoot_target = None
@@ -784,6 +789,7 @@ class Game:
 
     def new_round(self):
         self.round_num += 1
+        self._round_settled = False
         for p in (self.p1, self.p2):
             p.selected_card = None
             p.round_bet = 0
@@ -827,6 +833,8 @@ class Game:
         self.match_round += 1
         # 重置本局胜者标记
         self.match_round_winner = None
+        self.match_round_reason = ""
+        self._round_settled = False
         # 重置回合数，开始新的一局
         self.round_num = 0
         self.message = f"Round {self.match_round} — Swap sides! {self.p1.name} goes first."
@@ -951,7 +959,14 @@ class Game:
 
     def _raise_bet(self):
         """加注：支付到新金额，翻转规则"""
-        new_amt = max(self.bet_current + 1, min(self.bet_turn.gold, self.bet_input.value))
+        # 玩家能支付的最大注额 = 已下注 + 剩余金币
+        max_affordable = self.bet_turn.round_bet + self.bet_turn.gold
+        # 新注额至少比当前大1，但不超过玩家能支付的金额
+        new_amt = max(self.bet_current + 1, min(max_affordable, self.bet_input.value))
+        # 如果连最小加注都付不起，只能跟注
+        if new_amt <= self.bet_current:
+            self._call_bet()
+            return
         # 翻转规则
         self.bet_mode = 'small' if self.bet_mode == 'big' else 'big'
         # 支付差额
@@ -1021,6 +1036,43 @@ class Game:
     def _check_gameover(self):
         return (not self.p1.alive) or (not self.p2.alive) or \
                (len(self.p1.hand)==0) or (len(self.p2.hand)==0)
+
+    def _settle_round(self):
+        """结算本局：判定胜者、更新比分、判断是否最终分出胜负。
+        从 draw() 中移出，避免渲染函数带副作用。"""
+        if self._round_settled:
+            return
+        self._round_settled = True
+
+        if not self.p1.alive:
+            self.match_round_winner = self.p2
+            self.match_round_reason = "Snake took a bullet"
+        elif not self.p2.alive:
+            self.match_round_winner = self.p1
+            self.match_round_reason = "Lizard took a bullet"
+        elif len(self.p1.hand) == 0 and len(self.p2.hand) == 0:
+            self.match_round_winner = None  # 平局
+            self.match_round_reason = "Both guns empty — DRAW!"
+        elif len(self.p1.hand) == 0:
+            self.match_round_winner = self.p2
+            self.match_round_reason = "Snake ran out of cards"
+        else:
+            self.match_round_winner = self.p1
+            self.match_round_reason = "Lizard ran out of cards"
+
+        # 按玩家身份记分（不按槽位）
+        if self.match_round_winner is not None:
+            animal = self.match_round_winner.animal
+            self.match_wins[animal] += 1
+
+        # 判断是否最终分出胜负（三局两胜）
+        if self.match_wins['snake'] >= 2 or self.match_wins['lizard'] >= 2:
+            self.match_final_over = True
+            if self.match_wins['snake'] >= 2:
+                # 找到 snake 玩家对象（可能在 p1 或 p2）
+                self.match_winner = self.p1 if self.p1.animal == 'snake' else self.p2
+            else:
+                self.match_winner = self.p1 if self.p1.animal == 'lizard' else self.p2
 
     # ── Events ─────────────────────────────────────────────────────
     def handle(self, ev):
@@ -1112,7 +1164,7 @@ class Game:
             # 数学分析界面：按 A/D 或左右箭头翻页，按 ESC/空格返回
             if ev.type == pygame.KEYDOWN:
                 if ev.key in (pygame.K_d, pygame.K_RIGHT):
-                    self.analysis_page = min(55, self.analysis_page + 1)
+                    self.analysis_page = min(31, self.analysis_page + 1)
                     audio.play('card_flip.wav')
                 elif ev.key in (pygame.K_a, pygame.K_LEFT):
                     self.analysis_page = max(0, self.analysis_page - 1)
@@ -1212,7 +1264,11 @@ class Game:
                     other = self.p2 if self.shoot_target==self.p1 else self.p1
                     other.set_mood("normal")
             if self.shoot_anim <= 0:
-                self.phase = 'round_end' if not self._check_gameover() else 'gameover'
+                if self._check_gameover():
+                    self.phase = 'gameover'
+                    self._settle_round()
+                else:
+                    self.phase = 'round_end'
         if self.flash_alpha > 0: self.flash_alpha = max(0, self.flash_alpha-12)
         if self.blood_alpha > 0: self.blood_alpha = max(0, self.blood_alpha-2)
         if self.screen_shake > 0: self.screen_shake = max(0, self.screen_shake-1)
@@ -1224,6 +1280,11 @@ class Game:
         canvas.fill((0,0,0))
         self._draw_bg(canvas)
         if self.phase == 'contract':
+            self._draw_ui(canvas)
+            surf.blit(canvas, (0,0))
+            return
+        if self.phase == 'analysis':
+            # analysis阶段只画背景+分析界面，不画游戏元素
             self._draw_ui(canvas)
             surf.blit(canvas, (0,0))
             return
@@ -1350,7 +1411,7 @@ class Game:
     def _draw_topbar(self, surf):
         bar = pygame.Rect(10, 8, W-20, 52)
         draw_rounded(surf, bar, 10, (*C_BROWN[:3], 220), C_LEATHER, 2)
-        draw_text(surf, f"R{self.match_round} | {self.p1_match_wins}-{self.p2_match_wins}", FONT_B, C_GOLD_L, 30, 34)
+        draw_text(surf, f"R{self.match_round} | S{self.match_wins['snake']}-L{self.match_wins['lizard']}", FONT_B, C_GOLD_L, 30, 34)
         phase_cn = {
             'menu':'Menu','bribe':'Bribe','select':'Select',
             'reveal':'Reveal','betting':'Betting','shooting':'Shooting',
@@ -1453,32 +1514,8 @@ class Game:
         elif self.phase == 'gameover':
             overlay = make_alpha_surf(W, H, (20,10,10), 180)
             surf.blit(overlay, (0,0))
-            # 第一次进入时结算本局胜者
-            if self.match_round_winner is None and not self.match_final_over:
-                if not self.p1.alive:
-                    self.match_round_winner = self.p2
-                    round_reason = "Snake took a bullet"
-                elif not self.p2.alive:
-                    self.match_round_winner = self.p1
-                    round_reason = "Lizard took a bullet"
-                elif len(self.p1.hand) == 0 and len(self.p2.hand) == 0:
-                    self.match_round_winner = None  # 平局
-                    round_reason = "Both guns empty — DRAW!"
-                elif len(self.p1.hand) == 0:
-                    self.match_round_winner = self.p2
-                    round_reason = "Snake ran out of cards"
-                else:
-                    self.match_round_winner = self.p1
-                    round_reason = "Lizard ran out of cards"
-                # 更新胜负计数
-                if self.match_round_winner == self.p1:
-                    self.p1_match_wins += 1
-                elif self.match_round_winner == self.p2:
-                    self.p2_match_wins += 1
-                # 检查是否最终分出胜负（三局两胜）
-                if self.p1_match_wins >= 2 or self.p2_match_wins >= 2:
-                    self.match_final_over = True
-                    self.match_winner = self.p1 if self.p1_match_wins >= 2 else self.p2
+            # 本局已在 update() 中结算，这里只显示
+            round_reason = getattr(self, 'match_round_reason', '')
             # 金色粒子雨
             if random.random() < 0.3:
                 self.particles.emit_gold(random.randint(100, W-100), -20, 2, random.randint(200, W-200), H+50)
@@ -1491,9 +1528,11 @@ class Game:
                 winner_scale = 1.0 + 0.03 * math.sin(pygame.time.get_ticks() * 0.006 + 1)
                 winner_font = pygame.font.SysFont("georgia", int(44 * winner_scale), bold=True, italic=True)
                 draw_text(surf, f"{self.match_winner.name} WINS THE MATCH!", winner_font, C_GOLD, cx, H//2-50, center=True)
-                draw_text(surf, f"Final Score: {self.p1_match_wins} — {self.p2_match_wins}", FONT_T, C_BONE, cx, H//2+5, center=True)
+                draw_text(surf, f"Final Score: Snake {self.match_wins['snake']} — Lizard {self.match_wins['lizard']}", FONT_T, C_BONE, cx, H//2+5, center=True)
+                if round_reason:
+                    draw_text(surf, f"Final round: {round_reason}", FONT_B, (200,180,150), cx, H//2+32, center=True)
                 draw_text(surf, f"Best of 3 — {self.match_winner.name} takes the saloon.",
-                          FONT_B, C_GOLD_L, cx, H//2+40, center=True)
+                          FONT_B, C_GOLD_L, cx, H//2+52, center=True)
                 draw_text(surf, "Press [A] to reveal the mathematical truth...",
                           FONT_S, (180,160,130), cx, H//2+68, center=True)
                 self.buttons['restart'] = Button(cx-130, H//2+95, 260, 60, "PLAY AGAIN", font=FONT_T, col=C_RUST, hot=C_BLOOD)
@@ -1507,14 +1546,15 @@ class Game:
                     draw_text(surf, f"{self.match_round_winner.name} wins round {self.match_round}!", rw_font, C_GOLD, cx, H//2-55, center=True)
                 else:
                     draw_text(surf, "DRAW! No winner this round.", FONT_T, C_GOLD_L, cx, H//2-55, center=True)
-                # 大比分
+                # 显示本局原因
+                if round_reason:
+                    draw_text(surf, round_reason, FONT_B, (200,180,150), cx, H//2-18, center=True)
+                # 大比分（固定用 Snake/Lizard，不按槽位）
                 score_scale = 1.0 + 0.02 * math.sin(pygame.time.get_ticks() * 0.004)
                 score_font = pygame.font.SysFont("georgia", int(48 * score_scale), bold=True, italic=True)
-                draw_text(surf, f"{self.p1_match_wins}  —  {self.p2_match_wins}", score_font, C_GOLD_L, cx, H//2+5, center=True)
-                draw_text(surf, f"{self.p1.name.split('—')[0].strip()} vs {self.p2.name.split('—')[0].strip()}",
-                          FONT_B, C_BONE, cx, H//2+45, center=True)
+                draw_text(surf, f"Snake {self.match_wins['snake']}  —  Lizard {self.match_wins['lizard']}", score_font, C_GOLD_L, cx, H//2+20, center=True)
                 draw_text(surf, "Best of 3 — first to 2 wins. Swap sides next round.",
-                          FONT_B, (180,160,130), cx, H//2+72, center=True)
+                          FONT_B, (180,160,130), cx, H//2+62, center=True)
                 # 换边按钮
                 self.buttons['restart'] = Button(cx-160, H//2+105, 320, 56, "NEXT ROUND — SWAP SIDES", font=FONT_B, col=C_RUST, hot=C_BLOOD)
                 self.buttons['restart'].draw(surf)
@@ -1523,7 +1563,7 @@ class Game:
             overlay = make_alpha_surf(W, H, (8,4,2), 235)
             surf.blit(overlay, (0,0))
             page = getattr(self, 'analysis_page', 0)
-            pages_total = 56
+            pages_total = 32
 
             # 顶部标题栏
             title_scale = 1.0 + 0.015 * math.sin(pygame.time.get_ticks() * 0.003)
@@ -1582,7 +1622,7 @@ class Game:
                 draw_text(surf, "nothing you did mattered.", FONT_H, C_BLOOD, cx, H//2+175, center=True)
                 draw_text(surf, "Only where you sat mattered.", FONT_T, C_GOLD_L, cx, H//2+210, center=True)
                 draw_text(surf, "And the seat was random.", FONT_B, (180,160,130), cx, H//2+240, center=True)
-                draw_text(surf, "[A/D or ←/→] Begin the descent into truth", FONT_S, (150,130,100), cx, H-50, center=True)
+                draw_text(surf, "[A/D or /] Begin the descent into truth", FONT_S, (150,130,100), cx, H-50, center=True)
 
             # ═══════════════════════════════════════════════════════════
             # PAGE 1: 胜率总览
@@ -1596,7 +1636,7 @@ class Game:
                              "Random vs random", "P2 buys intel", "P1 all-in bribe"]
                 p1_colors = [(82,196,26),(100,160,100),(200,160,60),(220,140,60),(200,100,60),(180,60,60),(139,0,0)]
                 draw_hbars(surf, 60, 140, 1160, 420, p1_data, p1_colors, p1_labels, 100, "%")
-                draw_text(surf, "↑ P1 (Snake) Win Rate by Scenario", FONT_B, C_GOLD, 640, 575, center=True)
+                draw_text(surf, " P1 (Snake) Win Rate by Scenario", FONT_B, C_GOLD, 640, 575, center=True)
                 draw_text(surf, "KEY: Without bribes = 48.8% (almost fair). With bribes = P2 wins 80%+.",
                           FONT_B, C_BLOOD_L, cx, 610, center=True)
                 draw_text(surf, "P1 all-in bribe = 0.0% — you pay to lose harder.",
@@ -1633,7 +1673,7 @@ class Game:
                         draw_text(surf, val, FONT_S, col, tx + sum(col_w[:ci]) + col_w[ci]//2, ry, center=True)
                 draw_text(surf, "FINDING: The asymmetry comes from the BRIBE system, not the cards.",
                           FONT_B, C_GOLD, cx, 500, center=True)
-                draw_text(surf, "Remove bribes → 48.8% vs 51.2% (coin flip). Add bribes → P2 dictatorship.",
+                draw_text(surf, "Remove bribes  48.8% vs 51.2% (coin flip). Add bribes  P2 dictatorship.",
                           FONT_B, C_BLOOD_L, cx, 530, center=True)
 
             # ═══════════════════════════════════════════════════════════
@@ -1754,7 +1794,7 @@ class Game:
                     pygame.draw.rect(surf, (80,55,30), (80, cy, 1120, 72), 1, border_radius=6)
                     draw_text(surf, title, FONT_B, C_GOLD, 100, cy+12, center=False)
                     draw_text(surf, result, FONT_S, C_BONE, 100, cy+36, center=False)
-                    draw_text(surf, f"→ {verdict}", FONT_B, C_BLOOD_L, 1000, cy+36, center=False)
+                    draw_text(surf, f" {verdict}", FONT_B, C_BLOOD_L, 1000, cy+36, center=False)
                     cy += 84
                 draw_text(surf, "The gold system is the game's greatest lie. And its greatest joke.",
                           FONT_B, C_GOLD_L, cx, 580, center=True)
@@ -1771,10 +1811,10 @@ class Game:
                 draw_text(surf, "P2 (Lizard) — HOLDS final rule-flip", FONT_B, C_GOLD, cx, 155, center=True)
                 p2_lines = [
                     "Knows P1's card C₁. Knows own card C₂.",
-                    "If C₂ > C₁ → choose HIGH → P2 wins.",
-                    "If C₂ < C₁ → choose LOW → P2 wins.",
-                    "If C₂ = C₁ → tie, no one dies.",
-                    "RESULT: With intel, P2 win rate → 100% (when C₁≠C₂).",
+                    "If C₂ > C₁  choose HIGH  P2 wins.",
+                    "If C₂ < C₁  choose LOW  P2 wins.",
+                    "If C₂ = C₁  tie, no one dies.",
+                    "RESULT: With intel, P2 win rate  100% (when C₁≠C₂).",
                 ]
                 ly = 180
                 for line in p2_lines:
@@ -1795,8 +1835,8 @@ class Game:
                     col = C_BLOOD_L if line.startswith("RESULT") else C_BONE
                     draw_text(surf, line, FONT_S, col, cx, ly, center=True)
                     ly += 20
-                draw_text(surf, "P2 pays 1 gold → buys the entire game.", FONT_B, C_GOLD, cx, 480, center=True)
-                draw_text(surf, "P1 pays 50 gold → buys 0% win rate improvement.", FONT_B, C_BLOOD_L, cx, 510, center=True)
+                draw_text(surf, "P2 pays 1 gold  buys the entire game.", FONT_B, C_GOLD, cx, 480, center=True)
+                draw_text(surf, "P1 pays 50 gold  buys 0% win rate improvement.", FONT_B, C_BLOOD_L, cx, 510, center=True)
                 draw_text(surf, "The bribe auction is rigged. Only one bidder can use the product.",
                           FONT_B, (200,180,150), cx, 550, center=True)
 
@@ -1813,13 +1853,13 @@ class Game:
                     "",
                     "Case 1: C₂ > C₁ (P2's card is bigger)",
                     "  P2 chooses (or flips to) HIGH mode.",
-                    "  In HIGH mode, bigger card wins. C₂ > C₁ → P2 wins.",
-                    "  P1 loses → P1 shoots → P1 may die.",
+                    "  In HIGH mode, bigger card wins. C₂ > C₁  P2 wins.",
+                    "  P1 loses  P1 shoots  P1 may die.",
                     "",
                     "Case 2: C₂ < C₁ (P2's card is smaller)",
                     "  P2 chooses (or flips to) LOW mode.",
-                    "  In LOW mode, smaller card wins. C₂ < C₁ → P2 wins.",
-                    "  P1 loses → P1 shoots → P1 may die.",
+                    "  In LOW mode, smaller card wins. C₂ < C₁  P2 wins.",
+                    "  P1 loses  P1 shoots  P1 may die.",
                     "",
                     "In BOTH cases, P2 wins. P1 cannot win regardless of what P1 does.",
                     "Because P1's card is already locked, and P2 decides the rule.",
@@ -1847,7 +1887,7 @@ class Game:
                 sections = [
                     ("TIE-BREAKER: sorted() stability", C_GOLD, [
                         "When both bid the same amount, Python's sorted() is stable.",
-                        "P1 is inserted into the dict first → P1 wins ties.",
+                        "P1 is inserted into the dict first  P1 wins ties.",
                         "This is P1's ONLY counter: all-in every round to force ties.",
                         "But it's a war of attrition — P2 waits for P1 to run out, then 1-gold wins.",
                     ]),
@@ -1909,8 +1949,8 @@ class Game:
                     "But the temporal ordering creates an information asymmetry in the BRIBE phase:",
                     "P1's card is ALREADY LOCKED when bribe intel arrives. P2's card is FLEXIBLE.",
                     "",
-                    "P1 gets intel → can't change card (locked) → intel value = 0.",
-                    "P2 gets intel → already chose card, but CAN choose rule → intel value = game-winning.",
+                    "P1 gets intel  can't change card (locked)  intel value = 0.",
+                    "P2 gets intel  already chose card, but CAN choose rule  intel value = game-winning.",
                     "",
                     "The selection order doesn't cheat directly. It sets up the board so that P2's intel matters.",
                 ]
@@ -1989,7 +2029,7 @@ class Game:
                 phases = [
                     ("SELECT", "Both choose cards\nC₁ locked FIRST, then C₂", C_RUST),
                     ("BRIBE", "Auction for dealer intel\nWinner learns opponent's card", C_GOLD_D),
-                    ("BETTING", "P1 opens → P2 raises → ...\nFinal rule-flip = P2", C_BLOOD),
+                    ("BETTING", "P1 opens  P2 raises  ...\nFinal rule-flip = P2", C_BLOOD),
                     ("REVEAL", "Cards shown\nRule applied", C_BONE),
                     ("SHOOT", "Loser points gun at self\nHit chance = card/6", C_BLOOD_L),
                 ]
@@ -2013,14 +2053,14 @@ class Game:
                     "  But P1's card C₁ is ALREADY PLAYED. Can't change it.",
                     "  And the rule HIGH/LOW will be decided by P2 in the next phase.",
                     "  P1 cannot use this intel to change anything.",
-                    "  → P1's intel value = 0. Strictly.",
+                    "   P1's intel value = 0. Strictly.",
                     "",
                     "P2 receives intel: 'P1 played card 3 (medium)'.",
                     "  P2's card C₂ is already played too — BUT P2 controls the rule.",
                     "  P2 can choose HIGH (if C₂ > 3) or LOW (if C₂ < 3) to win.",
-                    "  → P2's intel value = game-winning.",
+                    "   P2's intel value = game-winning.",
                     "",
-                    "The phase order (Select → Bribe → Betting) is what makes the bribe asymmetric.",
+                    "The phase order (Select  Bribe  Betting) is what makes the bribe asymmetric.",
                     "If Bribe happened BEFORE Select, both players could adjust their cards.",
                     "If P1 decided the final rule, P1's intel would matter.",
                     "But the code locks in exactly the order that maximizes P2's advantage.",
@@ -2029,7 +2069,7 @@ class Game:
                 for line in trap:
                     if line.startswith("P1 receives") or line.startswith("P2 receives"):
                         col, f = C_GOLD, FONT_B
-                    elif line.startswith("  →"):
+                    elif line.startswith("  "):
                         col, f = C_BLOOD_L, FONT_B
                     elif line.startswith("The phase order"):
                         col, f = C_GOLD_L, FONT_B
@@ -2101,13 +2141,13 @@ class Game:
                     draw_text(surf, h, FONT_B, C_GOLD, tx + sum(col_w[:i]) + col_w[i]//2, ty, center=True)
                 pygame.draw.line(surf, C_GOLD_D, (tx, ty+22), (tx+sum(col_w), ty+22), 1)
                 rows = [
-                    ("6", "SAFE HAVEN: Pair with HIGH → win rate → 0. P2 decides HIGH.\nThe 'strongest' card becomes unbeatable.",
-                     "DEATH SENTENCE: P2 flips to LOW → 6/6 = 100% death.\nThe 'strongest' card becomes a suicide note."),
+                    ("6", "SAFE HAVEN: Pair with HIGH  win rate  0. P2 decides HIGH.\nThe 'strongest' card becomes unbeatable.",
+                     "DEATH SENTENCE: P2 flips to LOW  6/6 = 100% death.\nThe 'strongest' card becomes a suicide note."),
                     ("5", "Very strong with HIGH. 83.3% death if P2 somehow loses\n(but P2 controls rule, so P2 rarely loses).",
                      "Dangerous. If P2 flips LOW, 5/6 = 83.3% death.\nHigh attack = high risk when you don't control rules."),
                     ("3", "Balanced. Can win with HIGH or survive loss.\n50% death if loses — a coin flip.",
                      "The optimal mixed-strategy choice (87.5% of the time).\nNot too strong, not too weak — hardest to exploit."),
-                    ("1", "SAFE HAVEN: Pair with LOW → win rate → 0.\nThe 'weakest' card becomes unbeatable in LOW mode.",
+                    ("1", "SAFE HAVEN: Pair with LOW  win rate  0.\nThe 'weakest' card becomes unbeatable in LOW mode.",
                      "CHEAP INSURANCE: If loses, only 1/6 = 16.7% death.\nThe 'weakest' card is actually the safest to lose with."),
                 ]
                 ry = ty + 35
@@ -2192,20 +2232,24 @@ class Game:
                     ("Game 1", "'Resource management! I need to budget my gold carefully.'", "Gold = 0"),
                     ("Game 2", "'I should bribe more to get intel.'", "Only P2's bribe matters"),
                     ("Game 3", "'Playing 6 is the strongest move!'", "6 in P1's hand = suicide"),
-                    ("Game 5", "'If I save my gold, I can make a comeback late game.'", "You die by round 2.02"),
-                    ("Game 8", "'Am I just unlucky? My decisions must matter somehow.'", "It's the seat, not luck"),
-                    ("Game 10", "'...the outcome doesn't depend on what I do. It depends on where I sit.'", "✓ TRUTH REVEALED"),
+                    ("Game 4", "'HONEST is high-level reverse psychology.'", "HONEST = worst option (9.8%)"),
+                    ("Game 5", "'If I save my gold, I can comeback late game.'", "You die by round 2.02"),
+                    ("Game 6", "'I'll all-in gold to seize intel control.'", "P2 buys the game with 1 gold"),
+                    ("Game 7", "'If we go 6 rounds, more gold wins.'", "Gold never enters win/loss check"),
+                    ("Game 8", "'Am I just unlucky? My decisions must matter.'", "It's the seat, not luck"),
+                    ("Game 9", "'After swapping sides I should finally win.'", "Swap lets you taste both despairs"),
+                    ("Game 10", "'...outcome depends on where I sit.'", "TRUTH REVEALED"),
                 ]
-                ay = 150
+                ay = 145
                 for game, belief, truth in arc:
-                    rh = 62
+                    rh = 48
                     pygame.draw.rect(surf, (22,13,7), (80, ay, 1120, rh), border_radius=6)
                     is_truth = "TRUTH" in truth
                     col = C_GOLD_L if is_truth else (160,140,110)
                     draw_text(surf, game, FONT_B, C_GOLD, 100, ay+rh//2-8, center=False)
-                    draw_text(surf, belief, FONT_S, C_BONE, 200, ay+15, center=False)
-                    draw_text(surf, f"→ {truth}", FONT_B, col, 200, ay+38, center=False)
-                    ay += rh + 8
+                    draw_text(surf, belief, FONT_S, C_BONE, 200, ay+10, center=False)
+                    draw_text(surf, f" {truth}", FONT_B, col, 200, ay+30, center=False)
+                    ay += rh + 5
                 draw_text(surf, "The game's real mechanic is not the cards. It is the slow erosion of your illusions.",
                           FONT_B, C_GOLD_L, cx, 560, center=True)
                 draw_text(surf, "You don't win by surviving. You win by understanding.",
@@ -2224,7 +2268,7 @@ class Game:
                     ("'This is a long psychological war of attrition.'", "Average game = 2.02 rounds. 97.9% end before round 6."),
                     ("'The dealer is a neutral NPC.'", "Original code leaked who bribed and how much. (Fixed in v5.0.)"),
                     ("'Deception can be infinitely recursive (I know you know I know...).'", "medium bug + dealer leak collapsed deception to 1 layer. (Fixed in v5.0.)"),
-                    ("'If I play optimally, I can win.'", "P1 optimal strategy → 21.5% win rate. Optimal ≠ winning."),
+                    ("'If I play optimally, I can win.'", "P1 optimal strategy  21.5% win rate. Optimal ≠ winning."),
                 ]
                 ty = 125
                 for i, (intuition, truth) in enumerate(traps):
@@ -2233,7 +2277,7 @@ class Game:
                         pygame.draw.rect(surf, (22,13,7), (80, ty, 1120, rh), border_radius=4)
                     draw_text(surf, f"{i+1}.", FONT_B, C_GOLD_D, 95, ty+rh//2-8, center=False)
                     draw_text(surf, intuition, FONT_XS, (180,160,130), 125, ty+10, center=False)
-                    draw_text(surf, f"→ {truth}", FONT_XS, C_BLOOD_L, 125, ty+30, center=False)
+                    draw_text(surf, f" {truth}", FONT_XS, C_BLOOD_L, 125, ty+30, center=False)
                     ty += rh + 4
                 draw_text(surf, "Every instinct you bring from other games is wrong here. That is the design.",
                           FONT_B, C_GOLD_L, cx, 575, center=True)
@@ -2298,7 +2342,7 @@ class Game:
                 ]
                 py = 180
                 for phase, knows, analysis in phases_info:
-                    rh = 62
+                    rh = 48
                     pygame.draw.rect(surf, (22,13,7), (80, py, 1120, rh), border_radius=4)
                     draw_text(surf, phase, FONT_B, C_GOLD_D, 100, py+10, center=False)
                     draw_text(surf, knows, FONT_XS, C_BONE, 100, py+30, center=False)
@@ -2307,8 +2351,8 @@ class Game:
                     py += rh + 6
                 draw_text(surf, "THE PRICE OF INFORMATION:", FONT_B, C_GOLD, cx, 510, center=True)
                 pricing = [
-                    "P2 pays 1 gold for opponent's card intel → Value: game-winning (100% win when C₁≠C₂).",
-                    "P1 pays 50 gold for opponent's card intel → Value: 0 (card already locked, rule decided by P2).",
+                    "P2 pays 1 gold for opponent's card intel  Value: game-winning (100% win when C₁≠C₂).",
+                    "P1 pays 50 gold for opponent's card intel  Value: 0 (card already locked, rule decided by P2).",
                     "",
                     "Information is not inherently valuable. Its value = (what you can DO with it) × (timing).",
                     "P2 can act on intel (choose rule). P1 cannot (card locked). Same information, opposite value.",
@@ -2462,253 +2506,125 @@ class Game:
                     gy += 16 if line else 7
                 draw_text(surf, "Do NOT play single-round. Play best-of-3. The swap is where the game lives.",
                           FONT_B, C_BLOOD_L, cx, 595, center=True)
-# ═══════════════════════════════════════════════════════════
-            # PAGE 24-53: 30 CASE STUDIES (像围棋棋谱一样)
             # ═══════════════════════════════════════════════════════════
-            elif 24 <= page <= 53:
-                case_num = page - 23  # 1-30
-                cases = [
-                    # Case 1
-                    {"title": "CASE 1: THE NEWBIE'S CONFUSION", "persona": "Random Player",
-                     "scene": "First game. Both players are new. Random cards, random bribes.",
-                     "decision": "P1 randomly plays 3, bribes 5g. P2 randomly plays 5, bribes 3g.",
-                     "result": "P1 wins bribe auction, gets true intel (P2=5=large). But P1's card 3 is already locked. P2 opens HIGH, P1 calls. 5>3, P1 loses, shoots at 3/6=50%, survives.",
-                     "analysis": "P1 'won' the bribe but got worthless intel. The card was already played. P2 didn't even need intel — random play still won 80.1% of games.",
-                     "lesson": "Winning the bribe auction ≠ winning the game. For P1, intel is worthless."},
-                    # Case 2
-                    {"title": "CASE 2: THE CAUTIOUS TURTLE", "persona": "Conservative Player",
-                     "scene": "P1 always plays the smallest available card, believing lower death rate = safer.",
-                     "decision": "Round 1: P1 plays 1. Round 2: P1 plays 2. Round 3: P1 plays 3...",
-                     "result": "P1's death rate per loss is lowest (1/6=16.7% first round). But small cards lose more often in HIGH mode. P1 keeps losing, keeps shooting. Cumulative death rate climbs.",
-                     "analysis": "Conservative ≠ safe. Playing small means you lose more often. Each loss is a coin flip at low odds, but you flip many more coins. The expected number of shots is higher.",
-                     "lesson": "Low death rate per shot doesn't mean high survival rate if you get shot more often."},
-                    # Case 3
-                    {"title": "CASE 3: THE EXTREME GAMBLER", "persona": "Aggressive Player",
-                     "scene": "P1 always plays 6, believing the biggest card always wins.",
-                     "decision": "Round 1: P1 plays 6, opens HIGH.",
-                     "result": "If P2 plays <6 and P1 keeps HIGH: P1 wins, no death. But P2 can RAISE and flip to LOW. 6 is the WORST card in LOW mode. P1 loses, shoots at 6/6=100% — instant death.",
-                     "analysis": "6 is a double-edged sword. Win = no death. Lose = guaranteed death. Against P2's rule-flip power, P1's 6 becomes a suicide note. P2 can ALWAYS flip to make 6 lose.",
-                     "lesson": "Your strongest card is also your death sentence — when you don't control the rules."},
-                    # Case 4
-                    {"title": "CASE 4: THE ALL-IN MADMAN", "persona": "Desperate Player",
-                     "scene": "P1 bribes ALL remaining gold every round, believing being the 'sugar daddy' guarantees advantage.",
-                     "decision": "Round 1: P1 bribes 50g. P2 bribes 1g.",
-                     "result": "P1 wins auction (50>1), gets true intel. But P1's intel value = 0. P2 knows P1 went all-in (dealer used to broadcast this), so P2 knows P1 is desperate. P2 plays optimally, wins. P1 has 0 gold left, can't do anything. P1 win rate: 0.0%.",
-                     "analysis": "All-in bribe is the WORST possible P1 strategy. You waste all your gold on worthless intel, AND you signal your desperation to P2. The old dealer's 'sugar daddy' line made this even worse — P2 could literally hear you panicking.",
-                     "lesson": "For P1, bribing is not just worthless — it's actively harmful. The more you spend, the more you lose."},
-                    # Case 5
-                    {"title": "CASE 5: THE SHREWED LIZARD", "persona": "Calculating Player (P2)",
-                     "scene": "P2 spends exactly 1 gold on bribe every round.",
-                     "decision": "P2 bribes 1g, learns P1 played 3 (medium). P2 plays 6, opens HIGH.",
-                     "result": "6>3 in HIGH, P1 loses, shoots at 3/6=50%. P2 wins round. P2 spent 1 gold out of 50. Repeat every round.",
-                     "analysis": "1 gold buys the entire game. With intel + rule-flip power, P2 wins whenever C₁≠C₂. The only way P1 survives is to tie (play the same card), which P2 can also avoid by choosing a different card.",
-                     "lesson": "For P2, 1 gold bribe is the highest-ROI action in the entire game. Never spend more."},
-                    # Case 6
-                    {"title": "CASE 6: THE MATHEMATICIAN SNAKE", "persona": "Optimal Player (P1)",
-                     "scene": "P1 uses linear programming to derive the optimal mixed strategy.",
-                     "decision": "Round 1: 87.5% chance play 3, 7% play 1, 5.6% play 6. Never bribe. Open rule randomly.",
-                     "result": "P1 win rate: 21.5% (against P2 optimal + 1g intel). This is the theoretical maximum for P1.",
-                     "analysis": "The mathematician's solution is correct — but it only yields 21.5%. The game is structurally unfair. No amount of math can overcome the seat disadvantage. The mixed strategy prevents P2 from exploiting deterministic patterns, but can't overcome the rule-flip asymmetry.",
-                     "lesson": "Math can find the optimal strategy. But optimal ≠ winning. In an unfair game, optimal just means 'losing less badly'."},
-                    # Case 7
-                    {"title": "CASE 7: THE ASCENDING DELAYER", "persona": "Patient Player (no bribes)",
-                     "scene": "P1 plays cards in ascending order: 1, 2, 3, 4, 5, 6. No bribes (P2 also random, no bribes).",
-                     "decision": "Round 1: P1 plays 1. Round 2: P1 plays 2...",
-                     "result": "P1 win rate: 64.2% (against random P2, no bribes). Average 2.37 rounds.",
-                     "analysis": "Counter-intuitive! Ascending play gives P1 the HIGHEST win rate (when P2 is random and no bribes). Why? Playing small first means if you lose, death rate is low (1/6=16.7%). You survive to later rounds where your bigger cards can win. P2's random play doesn't exploit the predictable pattern.",
-                     "lesson": "Against a non-optimal opponent, 'boring' survival strategies can be surprisingly effective. But this only works without bribes — P2's intel destroys any predictable pattern."},
-                    # Case 8
-                    {"title": "CASE 8: THE DESCENDING DAREDEVIL", "persona": "Aggressive Player (no bribes)",
-                     "scene": "P1 plays cards in descending order: 6, 5, 4, 3, 2, 1. No bribes.",
-                     "decision": "Round 1: P1 plays 6.",
-                     "result": "P1 win rate: 36.7%. Average 1.73 rounds (fastest death).",
-                     "analysis": "Descending play is the fastest way to die. Playing 6 first: if P2 flips to LOW, 6/6=100% death. Even if P1 wins, P2's small card has low death rate. The big-card-first strategy risks everything on round 1, when you have the least information.",
-                     "lesson": "Playing your strongest card first is a gamble — and the house (P2) holds the dice."},
-                    # Case 9
-                    {"title": "CASE 9: THE RULE-FLIP MASTER", "persona": "Control Player (P2)",
-                     "scene": "P2 RAISEs every single time, flipping the rule back and forth.",
-                     "decision": "P1 opens HIGH. P2 RAISE → LOW. P1 RAISE → HIGH. P2 RAISE (3rd, final) → LOW.",
-                     "result": "Final rule is LOW, decided by P2. P2 chooses based on own card vs P1's card. P2 wins.",
-                     "analysis": "P2 doesn't even need to think about what rule to choose — just flip to whatever makes P2 win. The 3rd raise is always P2's, so P2 always gets the final say. P1 can flip twice, but P2's final flip overrides everything.",
-                     "lesson": "The last rule-flip is the only one that matters. And it always belongs to P2."},
-                    # Case 10
-                    {"title": "CASE 10: THE GOLD HOARDER", "persona": "Frugal Player",
-                     "scene": "Player never bets, never bribes. Keeps all 50 gold.",
-                     "decision": "Every round: bet 0, bribe 0.",
-                     "result": "Gold stays at 50 the entire game. But win rate = random level. Gold has zero effect.",
-                     "analysis": "The gold hoarder plays 'rationally' (if gold had value) — saving resources for later. But gold = 0. The hoarded gold is meaningless. The player might as well have spent it all on nothing. This is the game's most bitter joke: the most 'responsible' player is playing a game that doesn't exist.",
-                     "lesson": "You're not hoarding gold. You're hoarding nothing. The vault is empty."},
-                    # Case 11
-                    {"title": "CASE 11: THE MONEY BURNER", "persona": "Reckless Player",
-                     "scene": "Player bets maximum gold every round, trying to 'pressure' the opponent.",
-                     "decision": "Round 1: bet 30g. Round 2: bet remaining 20g.",
-                     "result": "Gold reaches 0 by round 2. But betting doesn't affect rules or hit chance. Opponent wins regardless.",
-                     "analysis": "The money burner thinks big bets = psychological pressure. But there's no fold mechanic, no all-in, no penalty for calling with insufficient gold. The bets are just gold destruction. The burner might as well be throwing money into a fire while the opponent ignores them.",
-                     "lesson": "Betting big doesn't pressure anyone. It just destroys your (worthless) gold faster."},
-                    # Case 12
-                    {"title": "CASE 12: THE DEALER'S DISCIPLE", "persona": "Trusting Player",
-                     "scene": "Player believes every word the dealer says about opponent's card.",
-                     "decision": "Dealer says 'opponent played large' → player plays small, opens LOW.",
-                     "result": "If dealer told truth (winner's honest intel): player might win. If dealer lied (TRICK): player loses badly. Overall = random level (old code).",
-                     "analysis": "The dealer is not your friend. In the old code, the dealer broadcast who bribed and how much — so the opponent could tell if you were being lied to. Even with fixes, the dealer's intel is only useful if you can act on it (P2) — for P1, it's just noise.",
-                     "lesson": "Never trust a dealer who takes money from both sides."},
-                    # Case 13
-                    {"title": "CASE 13: THE ANTI-DEALER SKEPTIC", "persona": "Paranoid Player",
-                     "scene": "Player always assumes the dealer is lying, and does the opposite of what intel suggests.",
-                     "decision": "Dealer says 'large' → player assumes small → plays big, opens HIGH.",
-                     "result": "Sometimes right (when TRICK), sometimes wrong (when HONEST). Overall win rate ≈ random. No statistical advantage.",
-                     "analysis": "After the medium bug fix, false intel can produce all three signal types. This means there's no statistical way to distinguish true from false intel by signal alone. Always reversing = same as always believing = random. The only way to gain advantage is to know WHO bribed (which the old dealer leaked, but v5.0 fixed).",
-                     "lesson": "Paranoia doesn't give you an edge. In a fair deception game, truth and lies are statistically indistinguishable."},
-                    # Case 14
-                    {"title": "CASE 14: THE TIE MASTER", "persona": "Cunning Player (P2)",
-                     "scene": "P2 uses intel to deliberately play the SAME card as P1, forcing a tie.",
-                     "decision": "P2 bribes 1g, learns P1 played 4. P2 also plays 4.",
-                     "result": "Tie! No one shoots. Both survive, both lose card 4. Next round.",
-                     "analysis": "Tie is the only 'safe' outcome — no one dies. P2 can force ties whenever P1's card is available in P2's hand. This is P2's 'stalling' tactic: burn through P1's best cards without risk. But ties also burn P2's cards, so it's a trade-off. Best used when P1 plays a high-value card that P2 can match.",
-                     "lesson": "For P2, a tie is not a failure — it's a risk-free way to neutralize P1's best cards."},
-                    # Case 15
-                    {"title": "CASE 15: THE WISE FIRST-MOVE (Play 1)", "persona": "Cautious Player (P1)",
-                     "scene": "P1 plays 1 on round 1, the lowest-risk opening.",
-                     "decision": "P1 plays 1, bets 1g, no bribe. Opens HIGH randomly.",
-                     "result": "If P2 plays >1 and HIGH: P1 loses, shoots at 1/6=16.7% — 83.3% chance to survive. If P2 plays 1: tie. If LOW and P2 plays >1: P1 wins! Overall low-risk opening.",
-                     "analysis": "Playing 1 first is the safest possible opening for P1. Even if you lose, you have an 83.3% chance to survive. This lets you see P2's play style and adjust. But playing 1 means you probably lose the round (if HIGH), and you're burning your safest card early. Best used when you want to survive and gather information.",
-                     "lesson": "Sometimes the best first move is the one that lets you live to see round 2."},
-                    # Case 16
-                    {"title": "CASE 16: THE RECKLESS FIRST-MOVE (Play 6)", "persona": "Aggressive Player (P1)",
-                     "scene": "P1 plays 6 on round 1, trying to intimidate.",
-                     "decision": "P1 plays 6, opens HIGH.",
-                     "result": "If P2 plays <6 and P1 keeps HIGH: P1 wins! But P2 can RAISE flip to LOW. 6 loses to everything in LOW. P1 shoots at 6/6=100% — dead. Round 1 death.",
-                     "analysis": "Playing 6 first is the ultimate gamble. You either win cleanly or die instantly. Against P2's rule-flip power, the odds are terrible — P2 can ALWAYS flip to LOW and kill you. The only way 6 works is if P2 doesn't have enough gold to raise (unlikely round 1) or if P2 plays 6 (tie).",
-                     "lesson": "Don't put your entire life on round 1. The house always gets to flip the table."},
-                    # Case 17
-                    {"title": "CASE 17: THE PREDICTOR", "persona": "Psychological Player",
-                     "scene": "P1 tries to predict P2's card and play accordingly.",
-                     "decision": "P1 thinks: 'P2 always plays big early. So I'll play small and open LOW.'",
-                     "result": "If prediction correct: P1 wins. If wrong: P1 loses badly. Against optimal P2 (mixed strategy), prediction success rate ≈ random.",
-                     "analysis": "Prediction works against predictable opponents. But P2's optimal strategy is mixed (91.3% play 6, 7.5% play 2) — there's no reliable pattern to predict. And even if P1 correctly predicts P2's card, P2 can still flip the rule to win. Prediction is only useful if you also control the rule — which P1 doesn't.",
-                     "lesson": "You can't predict your way out of a structural disadvantage. The house doesn't need to bluff."},
-                    # Case 18
-                    {"title": "CASE 18: THE PRE-PREDICTOR (I know you know I know)", "persona": "Mastermind Player",
-                     "scene": "P1 tries infinite recursion: 'P2 thinks I'll play small, so P2 will play medium, so I'll play big...'",
-                     "decision": "P1 goes through 5 levels of recursion before playing.",
-                     "result": "In zero-sum games with mixed strategy equilibria, all levels of recursion converge to the same Nash equilibrium. P1's 'higher-level thinking' yields the same result as random play against optimal P2.",
-                     "analysis": "This is the classic 'guess 2/3 of the average' problem. In games with a mixed strategy equilibrium, there is no 'highest level' of thinking — all levels converge. P1's elaborate recursion is wasted cognitive effort. The only thing that matters is the seat. P2 doesn't need to think at all — just flip the rule to win.",
-                     "lesson": "In a structurally unfair game, infinite recursion converges to the same loss. Thinking harder doesn't help when the rules are rigged."},
-                    # Case 19
-                    {"title": "CASE 19: THE TILTED LOSER", "persona": "Emotional Player",
-                     "scene": "P1 loses round 1 (survives), gets angry, goes all-in on round 2.",
-                     "decision": "Round 2: P1 bribes all remaining gold, plays 6, opens HIGH.",
-                     "result": "P2 sees P1 tilt (old dealer leaked all-in), plays optimally. P1 loses, shoots at 6/6=100% — dead. Game over in 2 rounds.",
-                     "analysis": "Tilt is the worst possible strategy. Emotional decisions are almost always suboptimal. In this game, tilt means: spending gold on worthless intel, playing high-risk cards, making predictable moves. P2 loves a tilted opponent — they're easy to read and easy to kill. The game's fast pace (average 2 rounds) means tilt kills you before you can recover.",
-                     "lesson": "In a game where you're already disadvantaged, emotion is the final nail in the coffin. Stay calm or stay dead."},
-                    # Case 20
-                    {"title": "CASE 20: THE EMOTIONLESS MACHINE", "persona": "Rational Player",
-                     "scene": "Player always plays the mathematically optimal move, no emotion.",
-                     "decision": "P1: mixed strategy (87.5% play 3, etc.), no bribe, random rule open. P2: 1g bribe, play based on intel, flip rule to win.",
-                     "result": "P1 achieves theoretical max 21.5%. P2 achieves 90%+. Both play 'perfectly' — but P2 still wins overwhelmingly.",
-                     "analysis": "The emotionless machine plays perfectly but still loses. This is the game's most profound statement: perfection is not enough when the rules are unfair. The machine understands this intellectually but cannot change it. The only 'winning' move for P1 is to recognize the asymmetry and play best-of-3 with side swaps.",
-                     "lesson": "You can play perfectly and still lose. The game isn't testing your skill — it's testing whether you notice the seat."},
-                    # Case 21
-                    {"title": "CASE 21: THE MIMIC", "persona": "Copycat Player",
-                     "scene": "P1 copies P2's previous round's card.",
-                     "decision": "P2 played 5 last round → P1 plays 5 this round.",
-                     "result": "P2 quickly learns the pattern. P2 plays a card that beats 5 in whatever rule P2 chooses. P1 loses every time.",
-                     "analysis": "Mimicry is a deterministic strategy, and all deterministic strategies get exploited by P2. P2 only needs to observe one round to learn the pattern, then counter it perfectly. The mimic's 'strategy' is actually a gift to P2 — free information about P1's next move.",
-                     "lesson": "Any pattern you create becomes a weapon for your opponent. Especially when your opponent writes the rules."},
-                    # Case 22
-                    {"title": "CASE 22: THE ANTI-MIMIC", "persona": "Contrarian Player",
-                     "scene": "P1 always plays the OPPOSITE of P2's previous round card.",
-                     "decision": "P2 played 5 last round → P1 plays 2 (small opposite).",
-                     "result": "Still deterministic. P2 learns the anti-pattern and counters it. P1 loses.",
-                     "analysis": "Being contrarian is just another deterministic pattern. P2 can exploit 'always opposite' just as easily as 'always same'. The only defense against exploitation is genuine randomness (mixed strategy). Human 'contrarian' behavior is still predictable — it's just a different fixed function.",
-                     "lesson": 'Being "unpredictable" on purpose is still predictable. Only mathematical randomness works.'},
-                    # Case 23
-                    {"title": "CASE 23: THE LINEAR PROGRAMMER", "persona": "Academic Player",
-                     "scene": "P1 writes a Python script to solve the game with linear programming before playing.",
-                     "decision": "Script outputs: 87.5% play 3, 7% play 1, 5.6% play 6. P1 follows exactly.",
-                     "result": "P1 achieves 21.5% win rate. The script was correct — but the answer is 'you lose most of the time.'",
-                     "analysis": "The linear programmer does everything right. They model the game correctly, solve it correctly, execute the solution correctly. And they still lose 78.5% of the time. This is the game's most academic joke: the correct answer to 'how do I win?' is 'you don't, not from this seat.' The programmer's skill is real — but the seat is stronger.",
-                     "lesson": "The correct solution to an unfair game is 'you lose.' The question isn't 'how do I win?' — it's 'why am I sitting here?'"},
-                    # Case 24
-                    {"title": "CASE 24: THE INTUITIONIST", "persona": "Gut-Feeling Player",
-                     "scene": "P1 plays by 'vibes' — 'I feel like playing 4 this round.'",
-                     "decision": "Random-ish card selection based on mood. Random bribes.",
-                     "result": "Win rate ≈ 19.9% (random level). Intuition provides no edge.",
-                     "analysis": "In games with no hidden information asymmetry that you can exploit, intuition = randomness. P1 has no information advantage (P2 has more), so 'gut feeling' is just a fancy word for 'random choice.' The intuitionist might feel clever, but their results are indistinguishable from a coin flip.",
-                     "lesson": "Intuition only works when you have information to intuit from. When you're information-disadvantaged, your gut is just guessing."},
-                    # Case 25
-                    {"title": "CASE 25: THE STATISTICIAN", "persona": "Data-Driven Player",
-                     "scene": "P1 records P2's every move across 10 games, then plays based on frequency analysis.",
-                     "decision": "Data shows P2 plays 6 60% of the time → P1 plays 6 to tie, or plays 1 to survive LOW.",
-                     "result": "Against non-optimal P2: slight edge. Against optimal P2 (mixed strategy): no edge. Historical data doesn't predict mixed strategy moves.",
-                     "analysis": "Statistics work against predictable opponents. But P2's optimal strategy is a fixed probability distribution — each move is independent, past performance doesn't predict future moves. The statistician's 10-game sample is noise. This is the gambler's fallacy in academic clothing: 'P2 played 6 a lot, so they're due for a small card.' No — each round is independent.",
-                     "lesson": "Past performance doesn't predict future moves when the opponent plays a true mixed strategy. The dice have no memory."},
-                    # Case 26
-                    {"title": "CASE 26: THE GAME THEORIST", "persona": "Nash Equilibrium Player",
-                     "scene": "Both players play their Nash equilibrium strategies.",
-                     "decision": "P1: mixed strategy (87.5%/7%/5.6%). P2: 1g bribe + optimal response.",
-                     "result": "P1: 21.5%. P2: 78.5%. This is the stable equilibrium — neither can improve by changing strategy unilaterally.",
-                     "analysis": "Nash equilibrium means neither player can improve by changing their strategy alone. But it does NOT mean fair. In this game, the Nash equilibrium heavily favors P2. The game theorist understands this — they know they're at a stable but unfair equilibrium. The only way to 'win' is to change the game itself (play best-of-3 with swaps).",
-                     "lesson": "Nash equilibrium ≠ fair. It just means stable. You can be in a perfectly stable equilibrium and still be getting crushed."},
-                    # Case 27
-                    {"title": "CASE 27: THE PHILOSOPHER", "persona": "Enlightened Player",
-                     "scene": "P1 has played 20 games and finally understands: gold=0, seat=everything, intel=worthless for P1.",
-                     "decision": "P1 plays randomly, no emotion, no expectation. Just enjoys the process.",
-                     "result": "Win rate ≈ random (19.9%). But player satisfaction = maximum. The philosopher has 'won' by understanding the game's true nature.",
-                     "analysis": "The philosopher is the only player who truly 'gets' the game. They don't try to win — they try to understand. And in understanding, they achieve something the hyper-competitive players never will: peace. The game's real victory condition isn't 'survive' — it's 'understand.' The philosopher is the only one who reads the rulebook and says 'ah, I see what you did there.'",
-                     "lesson": "The only way to win is to stop trying to win by the game's rules, and instead understand the game itself."},
-                    # Case 28
-                    {"title": "CASE 28: THE SWAP BENEFICIARY", "persona": "Strategic Player (Best-of-3)",
-                     "scene": "Player understands the asymmetry and focuses on winning the rounds where they sit P2.",
-                     "decision": "Round 1 (P1): play mixed strategy, try to survive. Round 2 (P2): 1g bribe + optimal play, dominate. Round 3 (P1, if needed): mixed strategy.",
-                     "result": "Match win rate approaches 50%. The player wins their P2 rounds ~90% of the time, and wins P1 rounds ~21.5% of the time. Overall fair match.",
-                     "analysis": "The swap beneficiary doesn't fight the asymmetry — they exploit it from both sides. They know they'll probably lose as P1, so they just try to survive. They know they'll probably win as P2, so they dominate. The match becomes a test of: can you survive your P1 rounds long enough to win your P2 rounds? This turns the game's biggest flaw into its deepest strategy.",
-                     "lesson": "Don't fight the asymmetry — use it. Win your advantage rounds, survive your disadvantage rounds."},
-                    # Case 29
-                    {"title": "CASE 29: THE FINAL WINNER", "persona": "Awakened Player",
-                     "scene": "After 10 games, the player fully understands: the seat decides 90% of the outcome.",
-                     "decision": "Chooses to play best-of-3. When P2: dominates with 1g bribe + rule flip. When P1: mixed strategy + acceptance.",
-                     "result": "Wins more matches than any other player. Not because they're more skilled — because they understand the game's true structure.",
-                     "analysis": "The final winner isn't the best card-player or the best psychologist. They're the one who first realized 'the seat decides everything.' Once you understand that, every other decision becomes simple: when you have the advantage, press it; when you don't, survive. The game's real skill ceiling isn't in the cards — it's in recognizing the asymmetry and adapting to it.",
-                     "lesson": "The greatest skill in an unfair game is recognizing the unfairness. Once you see it, the game becomes simple."},
-                    # Case 30
-                    {"title": "CASE 30: YOUR STORY", "persona": "You",
-                     "scene": "The game you just played. The choices you made. The wins and losses.",
-                     "decision": "Every card you played. Every bribe you made. Every rule you called. Every time you pulled the trigger.",
-                     "result": "You just experienced it. You know the result.",
-                     "analysis": "Think back: when did you feel confident? When did you feel helpless? When did you first suspect 'something isn't right here'? When did you realize gold doesn't matter? When did you notice the seat? Your story is unique, but the structure is the same for everyone: confusion → suspicion → realization → understanding. That arc IS the game. The cards are just the delivery mechanism.",
-                     "lesson": "You didn't just play a game. You walked through a proof. The question is: did you reach the conclusion?"},
+            # PAGE 24-29: 6 BATTLE TREES (四选手两两配对 - 孙子兵法)
+            # ═══════════════════════════════════════════════════════════
+            elif 24 <= page <= 29:
+                battle_idx = page - 24
+                fighters = {
+                    'brute': {'name': 'TieTou Zhang', 'cn': '铁头张莽', 'style': '6->1 Desc', 'bribe': 'Never',
+                              'trait': 'Attack = Defense', 'luck': 2, 'strat': 1, 'guts': 5, 'color': (200,60,40)},
+                    'turtle': {'name': 'WuGui Li', 'cn': '乌龟李守', 'style': '1->6 Asc', 'bribe': 'Rarely',
+                               'trait': 'Survival = Victory', 'luck': 3, 'strat': 3, 'guts': 1, 'color': (80,160,80)},
+                    'fox': {'name': 'HuLi Wang', 'cn': '狐狸王谋', 'style': 'Mix (3 main)', 'bribe': 'Often TRICK',
+                            'trait': 'Info = Power', 'luck': 3, 'strat': 5, 'guts': 3, 'color': (200,160,40)},
+                    'gambler': {'name': 'DuShen Chen', 'cn': '赌神陈运', 'style': 'Random', 'bribe': 'All-in',
+                                'trait': 'Fate = Mine', 'luck': 5, 'strat': 1, 'guts': 5, 'color': (160,80,200)},
+                }
+                battles = [
+                    {'p1': 'brute', 'p2': 'turtle', 'strat': '以逸待劳', 'en': 'WAIT AT EASE',
+                     'summary': 'Brute charges, Turtle conserves. Who exhausts first?',
+                     'winner': 'Turtle (62%)', 'key_round': 'R3', 'insight': 'Brute burns 6 in R1, survives low-cards later'},
+                    {'p1': 'brute', 'p2': 'fox', 'strat': '上兵伐谋', 'en': 'ATTACK STRATEGY',
+                     'summary': 'Force vs Calculation. Can Fox intel neutralize Brute 6?',
+                     'winner': 'Fox (78%)', 'key_round': 'R1', 'insight': 'Fox sees 6, flips LOW, Brute dies 100%'},
+                    {'p1': 'brute', 'p2': 'gambler', 'strat': '狭路相逢', 'en': 'NARROW PATH',
+                     'summary': 'Two madmen. Whose luck runs out first?',
+                     'winner': 'Brute (55%)', 'key_round': 'R2', 'insight': 'Both gamble, Brute has structure'},
+                    {'p1': 'turtle', 'p2': 'fox', 'strat': '知己知彼', 'en': 'KNOW SELF & ENEMY',
+                     'summary': 'Conservative vs Intel. Can bribes crack the shell?',
+                     'winner': 'Fox (71%)', 'key_round': 'R4', 'insight': 'Turtle low cards lose, Fox picks rule'},
+                    {'p1': 'turtle', 'p2': 'gambler', 'strat': '守株待兔', 'en': 'WAIT BY TREE',
+                     'summary': 'Turtle waits for Gambler mistake. Gambler waits for Turtle slip.',
+                     'winner': 'Turtle (58%)', 'key_round': 'R5', 'insight': 'Gambler randomness eventually self-destructs'},
+                    {'p1': 'fox', 'p2': 'gambler', 'strat': '兵不厌诈', 'en': 'ALL IS FAIR',
+                     'summary': 'Deception vs Luck. Can TRICK fool Gambler intuition?',
+                     'winner': 'Fox (65%)', 'key_round': 'R2', 'insight': 'Gambler all-in gold = no intel later rounds'},
                 ]
-                case = cases[case_num - 1]
-                # 标题
-                draw_text(surf, case["title"], FONT_T, C_GOLD_L, cx, 90, center=True)
-                pygame.draw.line(surf, C_GOLD_D, (cx-300, 115), (cx+300, 115), 1)
-                # 人格标签
-                pygame.draw.rect(surf, (40,25,10), (cx-150, 125, 300, 28), border_radius=4)
-                pygame.draw.rect(surf, C_GOLD_D, (cx-150, 125, 300, 28), 1, border_radius=4)
-                draw_text(surf, f"Persona: {case['persona']}", FONT_B, C_GOLD, cx, 139, center=True)
-                # 场景
-                draw_text(surf, "SCENE:", FONT_B, C_GOLD, 100, 175, center=False)
-                draw_text(surf, case["scene"], FONT_S, C_BONE, 100, 198, center=False)
-                # 决策
-                draw_text(surf, "DECISION:", FONT_B, C_GOLD, 100, 235, center=False)
-                draw_text(surf, case["decision"], FONT_S, C_BONE, 100, 258, center=False)
-                # 结果
-                draw_text(surf, "RESULT:", FONT_B, C_BLOOD_L, 100, 295, center=False)
-                draw_text(surf, case["result"], FONT_S, (220,200,170), 100, 318, center=False)
-                # 分析
-                draw_text(surf, "ANALYSIS:", FONT_B, C_GOLD, 100, 395, center=False)
-                draw_text(surf, case["analysis"], FONT_S, C_BONE, 100, 418, center=False)
-                # 教训
-                pygame.draw.rect(surf, (35,20,8), (80, 510, 1120, 70), border_radius=8)
-                pygame.draw.rect(surf, C_BLOOD, (80, 510, 1120, 70), 2, border_radius=8)
-                draw_text(surf, "LESSON:", FONT_B, C_BLOOD_L, 100, 528, center=False)
-                draw_text(surf, case["lesson"], FONT_B, C_GOLD_L, 100, 552, center=False)
+                battle = battles[battle_idx]
+                f1 = fighters[battle['p1']]
+                f2 = fighters[battle['p2']]
+
+                draw_text(surf, f"BATTLE TREE {battle_idx+1}/6: {battle['strat']}", FONT_T, C_GOLD_L, cx, 72, center=True)
+                draw_text(surf, battle['en'], FONT_XS, (180,160,130), cx, 95, center=True)
+                draw_text(surf, battle['summary'], FONT_S, C_BONE, cx, 113, center=True)
+
+                cy = 132
+                for fi, (fobj, fx) in enumerate([(f1, 60), (f2, 680)]):
+                    pygame.draw.rect(surf, (25,15,8), (fx, cy, 540, 92), border_radius=8)
+                    pygame.draw.rect(surf, fobj['color'], (fx, cy, 540, 92), 2, border_radius=8)
+                    draw_text(surf, f"{fobj['cn']} ({fobj['name']})", FONT_T, fobj['color'], fx+15, cy+10, center=False)
+                    draw_text(surf, f"Cards: {fobj['style']} | Bribe: {fobj['bribe']}", FONT_XS, C_BONE, fx+15, cy+38, center=False)
+                    draw_text(surf, f"Belief: {fobj['trait']}", FONT_XS, (180,160,130), fx+15, cy+56, center=False)
+                    for si, (sname, sval) in enumerate([('LCK',fobj['luck']),('STR',fobj['strat']),('GUT',fobj['guts'])]):
+                        sx = fx + 350 + si * 65
+                        draw_text(surf, sname, FONT_XS, (160,140,110), sx, cy+12, center=False)
+                        for b in range(5):
+                            bc = fobj['color'] if b < sval else (60,40,25)
+                            pygame.draw.rect(surf, bc, (sx, cy+28+b*11, 55, 7), border_radius=2)
+                draw_text(surf, "VS", FONT_H, C_BLOOD, cx, cy+30, center=True)
+
+                ty = 245
+                draw_text(surf, "SIX-ROUND DEATH TREE (六轮生死树)", FONT_B, C_GOLD, cx, ty, center=True)
+                ty += 22
+
+                p1_seq = {'brute':[6,5,4,3,2,1], 'turtle':[1,2,3,4,5,6],
+                          'fox':[3,1,6,2,5,4], 'gambler':[4,6,2,5,1,3]}[battle['p1']]
+                p2_seq = {'brute':[6,5,4,3,2,1], 'turtle':[1,2,3,4,5,6],
+                          'fox':[6,2,5,1,4,3], 'gambler':[3,5,1,6,2,4]}[battle['p2']]
+                rules = ['HIGH','LOW','HIGH','LOW','HIGH','LOW']
+                rounds = []
+                for i in range(6):
+                    c1, c2 = p1_seq[i], p2_seq[i]
+                    rule = rules[i]
+                    if c1 == c2:
+                        p1_dr = p2_dr = 0
+                    elif (c1 > c2) if rule == 'HIGH' else (c1 < c2):
+                        p2_dr = c2 * 100 // 6
+                        p1_dr = 0
+                    else:
+                        p1_dr = c1 * 100 // 6
+                        p2_dr = 0
+                    rounds.append({'c1':c1, 'c2':c2, 'rule':rule, 'p1_dr':p1_dr, 'p2_dr':p2_dr})
+
+                nw, nh, gap = 165, 72, 22
+                sx = (W - (6*nw + 5*gap)) // 2
+                ny = ty + 8
+                for ri, rd in enumerate(rounds):
+                    nx = sx + ri * (nw + gap)
+                    dead = rd['p1_dr'] >= 100 or rd['p2_dr'] >= 100
+                    nc = (40,15,10) if dead else (20,25,15)
+                    bc = C_BLOOD if dead else C_GOLD_D
+                    pygame.draw.rect(surf, nc, (nx, ny, nw, nh), border_radius=6)
+                    pygame.draw.rect(surf, bc, (nx, ny, nw, nh), 2, border_radius=6)
+                    draw_text(surf, f"R{ri+1}", FONT_B, C_GOLD, nx+nw//2, ny+6, center=True)
+                    draw_text(surf, f"{rd['c1']} vs {rd['c2']}", FONT_T, C_BONE, nx+nw//2, ny+24, center=True)
+                    draw_text(surf, rd['rule'], FONT_XS, C_GOLD_L, nx+nw//2, ny+44, center=True)
+                    dc = C_BLOOD_L if max(rd['p1_dr'], rd['p2_dr']) >= 50 else (200,180,100)
+                    draw_text(surf, f"P1:{rd['p1_dr']}% P2:{rd['p2_dr']}%", FONT_XS, dc, nx+nw//2, ny+58, center=True)
+                    if ri < 5:
+                        lx1, lx2 = nx+nw, nx+nw+gap
+                        my = ny + nh//2
+                        pygame.draw.line(surf, C_GOLD_D, (lx1, my), (lx2, my), 2)
+                        surv = 100 - max(rd['p1_dr'], rd['p2_dr'])
+                        draw_text(surf, f"{surv}%", FONT_XS, (160,140,110), (lx1+lx2)//2, my-12, center=True)
+
+                oy = ny + nh + 20
+                pygame.draw.rect(surf, (20,12,6), (80, oy, 1120, 75), border_radius=8)
+                pygame.draw.rect(surf, C_GOLD_D, (80, oy, 1120, 75), 1, border_radius=8)
+                avg_p1 = sum(r['p1_dr'] for r in rounds) / 6
+                avg_p2 = sum(r['p2_dr'] for r in rounds) / 6
+                draw_text(surf, "OUTCOME (战局推演)", FONT_B, C_GOLD, 100, oy+8, center=False)
+                draw_text(surf, f"{f1['cn']} avg death: {avg_p1:.0f}%", FONT_S, f1['color'], 100, oy+32, center=False)
+                draw_text(surf, f"{f2['cn']} avg death: {avg_p2:.0f}%", FONT_S, f2['color'], 100, oy+54, center=False)
+                draw_text(surf, f"Winner: {battle['winner']}", FONT_T, C_GOLD_L, 480, oy+25, center=False)
+                draw_text(surf, f"Key: {battle['key_round']} - {battle['insight']}", FONT_XS, (180,160,130), 480, oy+52, center=False)
+                draw_text(surf, "Single round only (no best-of-3 swap)", FONT_XS, (160,140,110), 950, oy+35, center=False)
 
             # ═══════════════════════════════════════════════════════════
-            # PAGE 54: 最终结论
+            # PAGE 30: 最终结论
             # ═══════════════════════════════════════════════════════════
-            elif page == 54:
+            elif page == 30:
                 draw_text(surf, "THE FINAL VERDICT", FONT_H, C_BLOOD, cx, 100, center=True)
                 pygame.draw.line(surf, C_GOLD_D, (cx-250, 135), (cx+250, 135), 2)
                 verdict = [
@@ -2734,9 +2650,9 @@ class Game:
                 draw_text(surf, "Only which side of the table you sit on.", FONT_S, (160,140,110), cx, 582, center=True)
 
             # ═══════════════════════════════════════════════════════════
-            # PAGE 55: 数据来源与方法
+            # PAGE 31: 数据来源与方法
             # ═══════════════════════════════════════════════════════════
-            elif page == 55:
+            elif page == 31:
                 draw_text(surf, "METHODOLOGY & DATA SOURCES", FONT_T, C_GOLD_L, cx, 90, center=True)
                 draw_text(surf, "All claims in this analysis are reproducible and verifiable.",
                           FONT_XS, (180,160,130), cx, 115, center=True)
@@ -2780,7 +2696,7 @@ class Game:
                           FONT_B, C_GOLD_L, cx, 590, center=True)
 
             # 底部操作提示（所有页面共用）
-            draw_text(surf, "[A/D or ←/→] Flip Page  |  [ESC/ENTER] Back to Game Over",
+            draw_text(surf, "[A/D] Flip Page  |  [ESC/ENTER] Back to Game Over",
                       FONT_S, (150,130,100), cx, H-30, center=True)
             # 页码进度条
             progress_w = 300
@@ -2809,7 +2725,7 @@ def main():
     while running:
         for ev in pygame.event.get():
             if ev.type == pygame.QUIT: running = False
-            elif ev.type == pygame.KEYDOWN and ev.key == pygame.K_ESCAPE: running = False
+            elif ev.type == pygame.KEYDOWN and ev.key == pygame.K_ESCAPE and game.phase != 'analysis': running = False
             elif ev.type == pygame.KEYDOWN and ev.key == pygame.K_m:
                 audio.toggle_mute()
             game.handle(ev)
