@@ -176,6 +176,9 @@ IMG_SNAKE = {m: _load_char('snake', m) for m in ['normal','scared','dead','survi
 IMG_LIZARD = {m: _load_char('lizard', m) for m in ['normal','scared','dead','survivor','victory']}
 IMG_DEALER = load_img('dealer_owl.png', (160, 200))
 IMG_ROULETTE = load_img('roulette_cylinder.png', (140, 140))
+IMG_STORY_SALOON = load_img('story_saloon.png', (W, H))
+IMG_STORY_CHARS = load_img('story_characters.png', (W, H))
+IMG_STORY_TABLE = load_img('story_table.png', (W, H))
 
 # ═════════════════════════════════════════════════════════════════════
 #  Utilities
@@ -1443,15 +1446,17 @@ class Game:
     def _draw_story(self, surf):
         """开场故事：酒馆风言风语，玩家醒来发现自己在赌局中"""
         cx = W // 2
-        # 昏暗酒馆背景
-        self._draw_bg(surf)
-        overlay = pygame.Surface((W, H), pygame.SRCALPHA)
-        overlay.fill((10, 5, 2, 200))
-        surf.blit(overlay, (0, 0))
-
         page = getattr(self, 'story_page', 0)
 
         if page == 0:
+            # 第一页：醒来 - 酒馆背景
+            if IMG_STORY_SALOON:
+                surf.blit(IMG_STORY_SALOON, (0, 0))
+            else:
+                self._draw_bg(surf)
+            overlay = pygame.Surface((W, H), pygame.SRCALPHA)
+            overlay.fill((10, 5, 2, 160))
+            surf.blit(overlay, (0, 0))
             # 第一页：醒来
             draw_text(surf, "YOU WAKE UP", FONT_H, C_BLOOD, cx, 120, center=True)
             draw_text(surf, "Head throbbing. Mouth dry. The smell of whiskey and old wood.",
@@ -1482,6 +1487,14 @@ class Game:
             draw_text(surf, "[Click or SPACE to continue]", FONT_S, (160, 140, 110), cx, 520, center=True)
 
         elif page == 1:
+            # 第二页：风言风语 - 角色拼贴背景
+            if IMG_STORY_CHARS:
+                surf.blit(IMG_STORY_CHARS, (0, 0))
+            else:
+                self._draw_bg(surf)
+            overlay = pygame.Surface((W, H), pygame.SRCALPHA)
+            overlay.fill((10, 5, 2, 170))
+            surf.blit(overlay, (0, 0))
             # 第二页：风言风语
             draw_text(surf, "WHISPERS AT THE TABLE", FONT_T, C_GOLD_L, cx, 100, center=True)
             draw_text(surf, "You cannot speak. But the others can. You listen.",
@@ -1508,6 +1521,14 @@ class Game:
             draw_text(surf, "[Click or SPACE to continue]", FONT_S, (160, 140, 110), cx, 520, center=True)
 
         elif page == 2:
+            # 第三页：规则暗示 + 开始 - 赌桌背景
+            if IMG_STORY_TABLE:
+                surf.blit(IMG_STORY_TABLE, (0, 0))
+            else:
+                self._draw_bg(surf)
+            overlay = pygame.Surface((W, H), pygame.SRCALPHA)
+            overlay.fill((10, 5, 2, 170))
+            surf.blit(overlay, (0, 0))
             # 第三页：规则暗示 + 开始
             draw_text(surf, "THE DEALER SPEAKS", FONT_T, C_BLOOD, cx, 100, center=True)
             draw_text(surf, "The Owl's voice is gravel and honey.",
