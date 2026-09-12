@@ -1852,15 +1852,31 @@ class Game:
                     ("Full 6 rounds", "3.5%"),
                     ("Single-round death rate", "48.6%"),
                 ]
-                sx = 120
-                for i, (k, v) in enumerate(stats):
-                    bx = sx + (i % 3) * 360
-                    by = 470 + (i // 3) * 50
-                    pygame.draw.rect(surf, (25,15,8), (bx, by, 340, 42), border_radius=6)
-                    draw_text(surf, k, FONT_XS, (160,140,110), bx+15, by+10, center=False)
-                    draw_text(surf, v, FONT_H, C_GOLD_L, bx+325, by+21, center=False)
+                # 第一行3个卡片，第二行2个卡片居中
+                card_w, card_h = 350, 55
+                gap_x = 25
+                row1_y = 465
+                row2_y = row1_y + card_h + 12
+                # 第一行
+                row1_start = (W - (3 * card_w + 2 * gap_x)) // 2
+                for i in range(3):
+                    bx = row1_start + i * (card_w + gap_x)
+                    k, v = stats[i]
+                    pygame.draw.rect(surf, (25,15,8), (bx, row1_y, card_w, card_h), border_radius=6)
+                    pygame.draw.rect(surf, C_GOLD_D, (bx, row1_y, card_w, card_h), 1, border_radius=6)
+                    draw_text(surf, k, FONT_XS, (160,140,110), bx+15, row1_y+10, center=False)
+                    draw_text(surf, v, FONT_T, C_GOLD_L, bx+card_w-15, row1_y+28, center=False)
+                # 第二行（2个卡片居中）
+                row2_start = (W - (2 * card_w + gap_x)) // 2
+                for i in range(2):
+                    bx = row2_start + i * (card_w + gap_x)
+                    k, v = stats[3 + i]
+                    pygame.draw.rect(surf, (25,15,8), (bx, row2_y, card_w, card_h), border_radius=6)
+                    pygame.draw.rect(surf, C_GOLD_D, (bx, row2_y, card_w, card_h), 1, border_radius=6)
+                    draw_text(surf, k, FONT_XS, (160,140,110), bx+15, row2_y+10, center=False)
+                    draw_text(surf, v, FONT_T, C_GOLD_L, bx+card_w-15, row2_y+28, center=False)
                 draw_text(surf, "The '6-round epic' is a myth. This is an execution, not a war of attrition.",
-                          FONT_B, C_BLOOD_L, cx, 590, center=True)
+                          FONT_B, C_BLOOD_L, cx, 610, center=True)
 
             # ═══════════════════════════════════════════════════════════
             # PAGE 5: 各牌值死亡率
