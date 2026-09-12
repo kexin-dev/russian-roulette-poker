@@ -137,8 +137,11 @@ C_BLOOD     = (150,  24,  24)
 C_BONE      = (228, 214, 186)
 C_GOLD      = (218, 178,  66)
 C_GOLD_L    = (248, 224, 130)
+C_GOLD_D    = (168, 128,  36)
 C_RUST      = (138,  74,  38)
 C_BROWN     = ( 60,  40,  24)
+C_BLOOD     = (150,  24,  24)
+C_BLOOD_L   = (210,  60,  60)
 C_PARCHMENT = (232, 220, 196)
 C_SHADOW    = ( 20,  12,   8)
 C_GREEN     = ( 60, 120,  60)
@@ -1645,7 +1648,7 @@ class Game:
                 round_colors = [(82,196,26),(100,160,100),(120,140,120),(180,160,60),(200,140,60),(200,100,60),(180,60,60)]
                 draw_vbars(surf, 100, 145, 1080, 320, round_data, round_colors, round_labels, 3, "轮")
                 line_y = 145 + 320 - 35 - int(6/3 * (320-50))
-                pygame.draw.line(surf, C_BLOOD, (100, line_y), (1180, line_y), 2, dash_pattern=[8,4])
+                pygame.draw.line(surf, C_BLOOD, (100, line_y), (1180, line_y), 2)
                 draw_text(surf, "Theoretical max: 6 rounds", FONT_B, C_BLOOD_L, 1180, line_y-12, center=False)
                 draw_text(surf, "ALL experiments average 1.7-2.4 rounds. None even close to 6.",
                           FONT_B, C_GOLD, cx, 500, center=True)
@@ -1691,7 +1694,7 @@ class Game:
                 card_colors = [(82,196,26),(120,180,100),(200,180,60),(220,140,60),(200,80,60),(139,0,0)]
                 draw_vbars(surf, 100, 180, 1080, 280, card_data, card_colors, card_labels, 100, "%")
                 line_y = 180 + 280 - 35 - int(50/100 * (280-50))
-                pygame.draw.line(surf, (200,200,200), (100, line_y), (1180, line_y), 1, dash_pattern=[5,5])
+                pygame.draw.line(surf, (200,200,200), (100, line_y), (1180, line_y), 1)
                 draw_text(surf, "50% coin-flip line", FONT_XS, (200,200,200), 1180, line_y-12, center=False)
                 draw_text(surf, "Card 6 wins HIGH mode... but if you lose, 6/6 = 100% GUARANTEED DEATH.",
                           FONT_B, C_BLOOD_L, cx, 500, center=True)
